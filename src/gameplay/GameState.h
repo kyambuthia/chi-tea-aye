@@ -21,11 +21,11 @@ public:
     void cleanup();
 
     float playerX() const;
-    float playerY() const;
+    float playerZ() const;
 
 private:
     float player_x_ = 0.0f;
-    float player_y_ = 0.0f;
+    float player_z_ = 0.0f;
 };
 
 } // namespace gameplay

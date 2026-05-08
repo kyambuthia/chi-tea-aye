@@ -36,9 +36,9 @@ public:
         gameplay_.update(input_, physics_, world_, dt);
 
         debug_ui_.beginFrame(sapp_width(), sapp_height(), dt, sapp_dpi_scale());
-        debug_ui_.draw(gameplay_, input_, frame_count_, dt);
+        debug_ui_.draw(gameplay_, input_, renderer_.styleSettings(), frame_count_, dt);
 
-        renderer_.draw(debug_ui_);
+        renderer_.draw(gameplay_, debug_ui_);
     }
 
     void cleanup() {

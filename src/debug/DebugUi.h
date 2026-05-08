@@ -12,13 +12,17 @@ namespace gameplay {
 class GameState;
 }
 
+namespace renderer {
+struct StyleSettings;
+}
+
 namespace debug {
 
 class DebugUi {
 public:
     void init();
     void beginFrame(int width, int height, float delta_time, float dpi_scale);
-    void draw(const gameplay::GameState& gameplay, const app::InputState& input, uint64_t frame_count, float delta_time);
+    void draw(const gameplay::GameState& gameplay, const app::InputState& input, renderer::StyleSettings& style, uint64_t frame_count, float delta_time);
     void render();
     bool handleEvent(const sapp_event* event);
     void cleanup();
