@@ -1,8 +1,27 @@
 #include "world/World.h"
 
 #include <cmath>
+#include <vector>
 
 namespace world {
+namespace {
+
+// A low wall across the path north of the start point, and a short one to the east.
+// The warrior can crouch behind either, or stand and shoot over the low one.
+// Heights are absolute, and the bottoms sit below the lowest ground. The low wall's
+// top (0.9) is between the crouched shot line (0.7) and the standing one (1.1), so
+// shots from a crouch are blocked and standing shots pass over. The other wall
+// (1.2) blocks both.
+const std::vector<Box> kWalls = {
+    {{-7.0f, -1.0f, 4.6f}, {1.0f, 0.9f, 5.0f}},
+    {{6.0f, -1.0f, 3.0f}, {7.0f, 1.2f, 4.0f}},
+};
+
+} // namespace
+
+const std::vector<Box>& World::walls() const {
+    return kWalls;
+}
 
 void World::init() {}
 

@@ -74,6 +74,8 @@ set(CHI_SOURCES
     src/renderer/Renderer.cpp
     src/renderer/GlFunctions.cpp
     src/gameplay/GameState.cpp
+    src/gameplay/Targets.cpp
+    src/ui/WeaponWheel.cpp
     src/physics/Physics.cpp
     src/assets/AssetSystem.cpp
     src/debug/DebugUi.cpp
@@ -146,6 +148,11 @@ if(CHI_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     target_link_libraries(knee_check PRIVATE chi-character)
     add_executable(clip_direction_check tests/clip_direction_check.cpp)
     target_link_libraries(clip_direction_check PRIVATE chi-character)
-    add_executable(movement_check tests/movement_check.cpp src/gameplay/GameState.cpp src/gameplay/WeaponState.cpp src/physics/Physics.cpp)
+    add_executable(movement_check tests/movement_check.cpp src/gameplay/GameState.cpp src/gameplay/WeaponState.cpp
+        src/gameplay/Targets.cpp src/world/World.cpp src/physics/Physics.cpp)
     target_include_directories(movement_check PRIVATE src)
+    add_executable(target_check tests/target_check.cpp src/gameplay/Targets.cpp src/world/World.cpp)
+    target_include_directories(target_check PRIVATE src)
+    add_executable(wheel_check tests/wheel_check.cpp src/ui/WeaponWheel.cpp)
+    target_include_directories(wheel_check PRIVATE src)
 endif()

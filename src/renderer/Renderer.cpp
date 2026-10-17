@@ -337,6 +337,38 @@ GLuint uploadTexture(const uint8_t* rgba, int width, int height) {
     return texture;
 }
 
+// A unit cube centred on the origin, in one colour. Faces are counter-clockwise seen from outside.
+void buildCube(std::vector<MeshVertex>& vertices, std::vector<uint16_t>& indices, const float color[3]) {
+    vertices.clear();
+    indices.clear();
+    for (int axis = 0; axis < 3; ++axis) {
+        for (const float sign : {-1.0f, 1.0f}) {
+            // Axes (u, v) with cross(u, v) = the face normal; swapped on the negative faces.
+            const int next = (axis + 1) % 3;
+            const int after = (axis + 2) % 3;
+            const int u_axis = sign > 0.0f ? next : after;
+            const int v_axis = sign > 0.0f ? after : next;
+            const uint16_t base = static_cast<uint16_t>(vertices.size());
+            for (int k = 0; k < 4; ++k) {
+                const float su = (k == 1 || k == 2) ? 0.5f : -0.5f;
+                const float sv = k >= 2 ? 0.5f : -0.5f;
+                MeshVertex v{};
+                v.position[axis] = 0.5f * sign;
+                v.position[u_axis] = su;
+                v.position[v_axis] = sv;
+                v.normal[axis] = sign;
+                v.color[0] = color[0];
+                v.color[1] = color[1];
+                v.color[2] = color[2];
+                v.color[3] = 1.0f;
+                vertices.push_back(v);
+            }
+            indices.insert(indices.end(), {base, static_cast<uint16_t>(base + 1), static_cast<uint16_t>(base + 2),
+                base, static_cast<uint16_t>(base + 2), static_cast<uint16_t>(base + 3)});
+        }
+    }
+}
+
 // Terrain grid: heights come from the world, normals from its slopes, and
 // triangles wind counter-clockwise seen from above.
 void buildGround(const world::World& world, std::vector<MeshVertex>& vertices, std::vector<uint16_t>& indices) {
@@ -425,6 +457,8 @@ struct Renderer::Impl {
 
     GpuMesh rifle_mesh;
     GpuMesh pistol_mesh;
+    GpuMesh cube_mesh;  // shooting targets
+    GpuMesh wall_mesh;  // walls
     GLuint rifle_texture = 0;
     GLuint pistol_texture = 0;
     int hand_joint = -1;
@@ -507,6 +541,16 @@ void Renderer::init(const assets::CharacterModel& character, const world::World&
     const assets::CharacterMesh& mesh = character.mesh();
     impl_->warrior = uploadMesh(mesh.vertices.data(), mesh.vertices.size(), mesh.indices.data(), mesh.indices.size());
 
+    std::vector<MeshVertex> cube_vertices;
+    std::vector<uint16_t> cube_indices;
+    const float target_color[3] = {0.95f, 0.50f, 0.15f};
+    buildCube(cube_vertices, cube_indices, target_color);
+    impl_->cube_mesh = uploadMesh(cube_vertices.data(), cube_vertices.size(), cube_indices.data(), cube_indices.size());
+
+    const float wall_color[3] = {0.46f, 0.43f, 0.39f};
+    buildCube(cube_vertices, cube_indices, wall_color);
+    impl_->wall_mesh = uploadMesh(cube_vertices.data(), cube_vertices.size(), cube_indices.data(), cube_indices.size());
+
     const uint8_t white[4] = {255, 255, 255, 255};
     impl_->white_texture = uploadTexture(white, 1, 1);
     impl_->ground_texture = impl_->white_texture;
@@ -574,12 +618,12 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     // Third-person camera: looks at the upper body from behind and above.
     const float target_x = gameplay.cameraTargetX();
     const float target_z = gameplay.cameraTargetZ();
-    const float target_y = 1.1f;
+    const float target_y = gameplay.cameraLookHeight();
     const float azimuth = gameplay.cameraAzimuth();
     const float pitch = gameplay.cameraPitch();
     // Aiming narrows the view from 60 to 30 degrees and brings the camera a third closer.
     const float aim = gameplay.weapon().aim();
-    const float distance = gameplay.cameraDistance() * (1.0f - 0.35f * aim);
+    const float distance = gameplay.clearCameraDistance(gameplay.cameraDistance() * (1.0f - 0.35f * aim));
     const float horizontal = distance * std::cos(pitch);
     const float eye_x = target_x + horizontal * std::sin(azimuth);
     const float eye_y = target_y + distance * std::sin(pitch);
@@ -628,12 +672,20 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     // A fist attack plays its punch over the locomotion, if the asset has the clip.
     const char* clip_name = gameplay.clipName();
     float clip_time = gameplay.clipTime();
+    // Crouching: the rifle has its own crouch clips; other weapons use the standing ones.
+    if (std::strcmp(clip_name, "CrouchIdle") == 0 || std::strcmp(clip_name, "CrouchWalk") == 0) {
+        const bool idle = std::strcmp(clip_name, "CrouchIdle") == 0;
+        const bool rifle_ready = gameplay.weapon().active() == gameplay::WeaponSlot::Rifle;
+        clip_name = rifle_ready ? (idle ? "RifleCrouchIdle" : "RifleCrouchWalk") : (idle ? "Idle" : "Walk");
+    }
     // With a weapon in hand, locomotion uses the weapon-held clips when they exist.
     const gameplay::WeaponSlot slot = gameplay.weapon().active();
     if (slot == gameplay::WeaponSlot::Rifle || slot == gameplay::WeaponSlot::Pistol) {
         const bool rifle = slot == gameplay::WeaponSlot::Rifle;
         const char* held = nullptr;
-        if (std::strcmp(clip_name, "Idle") == 0) held = rifle ? "RifleIdleAim" : "PistolIdle";
+        // Standing still with the rifle up at the shoulder plays the aim pose.
+        const bool aiming = rifle && gameplay.weapon().aim() > 0.5f;
+        if (std::strcmp(clip_name, "Idle") == 0) held = rifle ? (aiming ? "RifleAim" : "RifleIdleAim") : "PistolIdle";
         else if (std::strcmp(clip_name, "Walk") == 0) held = rifle ? "RifleWalk" : "PistolWalk";
         else if (std::strcmp(clip_name, "Run") == 0) held = rifle ? "RifleRun" : "PistolRun";
         if (held != nullptr && impl_->character->hasClip(held)) {
@@ -711,6 +763,40 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     }
 
     // Scope: only with the rifle in hand, fading in with the aim.
+    // Walls: grey boxes on the terrain.
+    if (impl_->wall_mesh.index_count > 0) {
+        glBindTexture(GL_TEXTURE_2D, impl_->white_texture);
+        setToonSurface(false);
+        glBindVertexArray(impl_->wall_mesh.vao);
+        for (const world::Box& wall : impl_->world->walls()) {
+            const float centre[3] = {0.5f * (wall.min[0] + wall.max[0]), 0.5f * (wall.min[1] + wall.max[1]), 0.5f * (wall.min[2] + wall.max[2])};
+            const float size[3] = {wall.max[0] - wall.min[0], wall.max[1] - wall.min[1], wall.max[2] - wall.min[2]};
+            const float no_rotation[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+            const Mat4 model = math::fromTrs(centre, no_rotation, size);
+            glUniformMatrix4fv(impl_->toon_mvp, 1, GL_FALSE, math::multiply(view_projection, model).m);
+            glUniformMatrix4fv(impl_->toon_model, 1, GL_FALSE, model.m);
+            glDrawElements(GL_TRIANGLES, impl_->wall_mesh.index_count, GL_UNSIGNED_SHORT, nullptr);
+        }
+    }
+
+    // Shooting targets: each standing target is a cube on the terrain.
+    if (impl_->cube_mesh.index_count > 0) {
+        glBindTexture(GL_TEXTURE_2D, impl_->white_texture);
+        setToonSurface(false);
+        glBindVertexArray(impl_->cube_mesh.vao);
+        for (const gameplay::Target& target : gameplay.targets().targets()) {
+            if (!target.standing) {
+                continue;
+            }
+            const float no_rotation[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+            const float size[3] = {target.size, target.height, target.size};
+            const Mat4 model = math::fromTrs(target.center, no_rotation, size);
+            glUniformMatrix4fv(impl_->toon_mvp, 1, GL_FALSE, math::multiply(view_projection, model).m);
+            glUniformMatrix4fv(impl_->toon_model, 1, GL_FALSE, model.m);
+            glDrawElements(GL_TRIANGLES, impl_->cube_mesh.index_count, GL_UNSIGNED_SHORT, nullptr);
+        }
+    }
+
     const float scope = weapon.active() == gameplay::WeaponSlot::Rifle ? weapon.aim() : 0.0f;
     if (scope > 0.001f && impl_->scope_program != 0) {
         glDisable(GL_DEPTH_TEST);
@@ -793,7 +879,7 @@ void Renderer::cleanup() {
         return;
     }
 
-    for (GpuMesh* mesh : {&impl_->rifle_mesh, &impl_->pistol_mesh}) {
+    for (GpuMesh* mesh : {&impl_->rifle_mesh, &impl_->pistol_mesh, &impl_->cube_mesh, &impl_->wall_mesh}) {
         if (mesh->vao != 0) {
             glDeleteVertexArrays(1, &mesh->vao);
             glDeleteBuffers(1, &mesh->vbo);

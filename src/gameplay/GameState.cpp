@@ -4,6 +4,7 @@
 #include "physics/Physics.h"
 #include "world/World.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace gameplay {
@@ -16,6 +17,12 @@ constexpr float kPi = 3.14159265358979323846f;
 // Speeds are the planted-foot speeds measured from each clip, so feet do not slide.
 constexpr float kWalkSpeed = 1.65f;
 constexpr float kRunSpeed = 4.0f;
+// Crouched: a slower walk. Estimated from the crouch clip, not yet measured on the feet.
+constexpr float kCrouchSpeed = 0.9f;
+// The warrior is a disc this wide on the ground, so walls stop it short of their faces.
+constexpr float kPlayerRadius = 0.35f;
+// Lens distance kept between the camera and a wall it is pulled in front of.
+constexpr float kCameraWallMargin = 0.3f;
 constexpr float kTurnRate = 10.0f;             // radians per second
 
 // Velocity ramps toward the desired velocity. Stopping is as quick as starting:
@@ -90,7 +97,6 @@ float approach(float current, float target, float factor) {
 void GameState::init() {}
 
 void GameState::update(const app::InputState& input, physics::Physics& physics, const world::World& world, float delta_time) {
-    (void)world;  // the edge comes from the world size constant
     // Orbit input moves the camera's goal directly. The camera does not follow
     // the warrior's heading while it moves, or the view would chase the turn
     // and spin: the input is read against the view, which turns the warrior.
@@ -122,7 +128,7 @@ void GameState::update(const app::InputState& input, physics::Physics& physics, 
     }
 
     const bool has_movement_key = moves.keys.w || moves.keys.a || moves.keys.s || moves.keys.d;
-    if (!has_movement_key && idle_orbit_time_ > kRecenterDelay) {
+    if (auto_recenter_ && !has_movement_key && idle_orbit_time_ > kRecenterDelay) {
         const float behind = yaw_ + kPi;
         const float offset = angleBetween(camera_goal_azimuth_, behind);
         const float step = kRecenterSpeed * delta_time;
@@ -140,11 +146,19 @@ void GameState::update(const app::InputState& input, physics::Physics& physics, 
     if (input.attack_pressed) {
         weapon_.attack();
     }
-    if (input.fire_pressed) {
-        weapon_.fire();
+    if (input.fire_pressed && weapon_.fire()) {
+        const Ray ray = cameraRay();
+        targets_.shoot(ray, std::min(Targets::kRange, nearestWallDistance(ray)));
     }
+    targets_.update(delta_time);
     weapon_.setAiming(input.aim_held);
     weapon_.update(delta_time);
+
+    if (input.crouch_pressed) {
+        crouched_ = !crouched_;
+    }
+    const float look_goal = crouched_ ? kCrouchLookHeight : kStandLookHeight;
+    look_height_ = approach(look_height_, look_goal, smoothingFactor(8.0f, delta_time));
 
     float dir_x = 0.0f;
     float dir_z = 0.0f;
@@ -161,8 +175,8 @@ void GameState::update(const app::InputState& input, physics::Physics& physics, 
         yaw_ = turnToward(yaw_, input_heading, kTurnRate * delta_time);
         const float align = std::fmax(0.0f, std::cos(angleBetween(yaw_, input_heading)));
         const bool running = input.keys.shift;
-        next = running ? Clip::Run : Clip::Walk;
-        const float speed = (running ? kRunSpeed : kWalkSpeed) * align;
+        next = crouched_ ? Clip::CrouchWalk : (running ? Clip::Run : Clip::Walk);
+        const float speed = (crouched_ ? kCrouchSpeed : (running ? kRunSpeed : kWalkSpeed)) * align;
         // Facing is +Z at zero yaw, so the forward direction is (sin, cos).
         desired_x = std::sin(yaw_) * speed;
         desired_z = std::cos(yaw_) * speed;
@@ -196,12 +210,41 @@ void GameState::update(const app::InputState& input, physics::Physics& physics, 
         velocity_z_ = 0.0f;
     }
 
+    // Walls: push the warrior out of each one, and drop the velocity into it.
+    for (const world::Box& wall : world.walls()) {
+        const float nx = std::fmax(wall.min[0], std::fmin(wall.max[0], player_x_));
+        const float nz = std::fmax(wall.min[2], std::fmin(wall.max[2], player_z_));
+        float dx = player_x_ - nx;
+        float dz = player_z_ - nz;
+        const float d2 = dx * dx + dz * dz;
+        if (d2 >= kPlayerRadius * kPlayerRadius) {
+            continue;
+        }
+        if (d2 < 1e-8f) {
+            // Inside the wall: move out through its near face, on the -Z side.
+            player_z_ = wall.min[2] - kPlayerRadius;
+            velocity_z_ = std::fmin(velocity_z_, 0.0f);
+            continue;
+        }
+        const float d = std::sqrt(d2);
+        dx /= d;
+        dz /= d;
+        const float push = kPlayerRadius - d;
+        player_x_ += dx * push;
+        player_z_ += dz * push;
+        const float into = velocity_x_ * dx + velocity_z_ * dz;
+        if (into < 0.0f) {
+            velocity_x_ -= into * dx;
+            velocity_z_ -= into * dz;
+        }
+    }
+
     const bool moving = std::sqrt(velocity_x_ * velocity_x_ + velocity_z_ * velocity_z_) > kStopSpeed;
-    Clip clip = Clip::Idle;
+    Clip clip = crouched_ ? Clip::CrouchIdle : Clip::Idle;
     if (has_input) {
         clip = next;
     } else if (moving) {
-        clip = Clip::Walk;  // slowing down after input: keep walking until stopped
+        clip = crouched_ ? Clip::CrouchWalk : Clip::Walk;  // slowing down: keep walking until stopped
     }
     if (clip != clip_) {
         clip_ = clip;
@@ -227,6 +270,84 @@ void GameState::update(const app::InputState& input, physics::Physics& physics, 
 
 void GameState::cleanup() {}
 
+void GameState::placeTargets(const world::World& world) {
+    world_ = &world;
+    targets_.place(world);
+}
+
+float GameState::cameraLookHeight() const {
+    return look_height_;
+}
+
+bool GameState::crouched() const {
+    return crouched_;
+}
+
+float GameState::nearestWallDistance(const Ray& ray) const {
+    float nearest = 1e9f;
+    if (world_ == nullptr) {
+        return nearest;
+    }
+    for (const world::Box& wall : world_->walls()) {
+        const float d = rayBoxDistance(ray, wall.min, wall.max);
+        if (d >= 0.0f && d < nearest) {
+            nearest = d;
+        }
+    }
+    return nearest;
+}
+
+float GameState::clearCameraDistance(float wanted_distance) const {
+    // Ray from the look point toward the camera; a wall on it shortens the camera's distance.
+    const float cos_pitch = std::cos(camera_pitch_);
+    const float dir[3] = {std::sin(camera_azimuth_) * cos_pitch, std::sin(camera_pitch_), std::cos(camera_azimuth_) * cos_pitch};
+    Ray ray{};
+    ray.origin[0] = camera_target_x_;
+    ray.origin[1] = look_height_;
+    ray.origin[2] = camera_target_z_;
+    for (int c = 0; c < 3; ++c) {
+        ray.direction[c] = dir[c];
+    }
+    const float wall = nearestWallDistance(ray);
+    if (wall >= wanted_distance) {
+        return wanted_distance;
+    }
+    return std::fmax(0.6f, wall - kCameraWallMargin);
+}
+
+Ray GameState::cameraRay() const {
+    // The same eye position the renderer uses, including the aim pull-in and walls.
+    const float aim = weapon_.aim();
+    const float distance = clearCameraDistance(camera_distance_ * (1.0f - 0.35f * aim));
+    const float horizontal = distance * std::cos(camera_pitch_);
+    const float look[3] = {camera_target_x_, look_height_, camera_target_z_};
+    const float eye[3] = {
+        look[0] + horizontal * std::sin(camera_azimuth_),
+        look[1] + distance * std::sin(camera_pitch_),
+        look[2] + horizontal * std::cos(camera_azimuth_),
+    };
+    Ray ray{};
+    float length = 0.0f;
+    for (int c = 0; c < 3; ++c) {
+        ray.origin[c] = eye[c];
+        ray.direction[c] = look[c] - eye[c];
+        length += ray.direction[c] * ray.direction[c];
+    }
+    length = std::sqrt(length);
+    for (int c = 0; c < 3; ++c) {
+        ray.direction[c] /= length;
+    }
+    return ray;
+}
+
+const Targets& GameState::targets() const {
+    return targets_;
+}
+
+void GameState::setAutoRecenter(bool enabled) {
+    auto_recenter_ = enabled;
+}
+
 float GameState::playerX() const {
     return player_x_;
 }
@@ -245,6 +366,10 @@ const char* GameState::clipName() const {
             return "Walk";
         case Clip::Run:
             return "Run";
+        case Clip::CrouchWalk:
+            return "CrouchWalk";
+        case Clip::CrouchIdle:
+            return "CrouchIdle";
         case Clip::Idle:
         default:
             return "Idle";

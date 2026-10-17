@@ -7,6 +7,7 @@
 #include "physics/Physics.h"
 #include "renderer/GlFunctions.h"
 #include "renderer/Renderer.h"
+#include "ui/WeaponWheel.h"
 #include "world/World.h"
 
 #include <SDL3/SDL.h>
@@ -81,6 +82,7 @@ public:
         world_.init();
         physics_.init();
         gameplay_.init();
+        gameplay_.placeTargets(world_);
         renderer_.init(assets_.character(), world_, assets_.rifle(), assets_.pistol());
         debug_ui_.init(window_, gl_context_, kGlslVersion);
 
@@ -95,6 +97,7 @@ public:
         last_ticks_ns_ = now_ns;
 
         ++frame_count_;
+        gameplay_.setAutoRecenter(debug_ui_.autoRecenter());
         gameplay_.update(input_, physics_, world_, dt);
         // Orbit and zoom are per-frame deltas; the drag state persists.
         input_.look_dx = 0.0f;
@@ -103,11 +106,15 @@ public:
         input_.weapon_request = -1;
         input_.attack_pressed = false;
         input_.fire_pressed = false;
+        input_.crouch_pressed = false;
         input_.tapped = app::KeyState{};
 
         debug_ui_.beginFrame();
         debug_ui_.draw(gameplay_, input_, renderer_.styleSettings(), frame_count_, dt,
             renderer_.clipTime(), renderer_.clipDuration());
+        if (wheel_open_) {
+            debug_ui_.drawWeaponWheel(windowCentreX(), windowCentreY(), kWheelRadius, wheelSelection());
+        }
 
 #if defined(__EMSCRIPTEN__)
         // The page owns the canvas size on web; keep the window matched to it.
@@ -143,12 +150,25 @@ public:
             case SDL_EVENT_KEY_UP:
                 // While the dev panel has the keyboard, keys go to it, not the game.
                 // Key releases always pass through, so no key is left stuck down.
+                if (e->key.scancode == SDL_SCANCODE_Q) {
+                    if (e->type == SDL_EVENT_KEY_DOWN && !e->key.repeat && !debug_ui_.wantsKeyboard()) {
+                        wheel_open_ = true;
+                    }
+                    if (e->type == SDL_EVENT_KEY_UP && wheel_open_) {
+                        const int slot = wheelSelection();
+                        if (slot >= 0) {
+                            input_.weapon_request = slot;
+                        }
+                        wheel_open_ = false;
+                    }
+                }
                 if (e->type == SDL_EVENT_KEY_DOWN && !e->key.repeat && !debug_ui_.wantsKeyboard()) {
                     if (e->key.scancode == SDL_SCANCODE_1) input_.weapon_request = 0;
                     if (e->key.scancode == SDL_SCANCODE_2) input_.weapon_request = 1;
                     if (e->key.scancode == SDL_SCANCODE_3) input_.weapon_request = 2;
                     if (e->key.scancode == SDL_SCANCODE_F) input_.attack_pressed = true;
                     if (e->key.scancode == SDL_SCANCODE_SPACE) input_.fire_pressed = true;
+                    if (e->key.scancode == SDL_SCANCODE_C) input_.crouch_pressed = true;
                     if (e->key.scancode == SDL_SCANCODE_W) input_.tapped.w = true;
                     if (e->key.scancode == SDL_SCANCODE_A) input_.tapped.a = true;
                     if (e->key.scancode == SDL_SCANCODE_S) input_.tapped.s = true;
@@ -233,6 +253,26 @@ public:
     }
 
 private:
+    // The window centre is where the weapon wheel is drawn.
+    float windowCentreX() const {
+        int w = 0;
+        SDL_GetWindowSize(window_, &w, nullptr);
+        return 0.5f * static_cast<float>(w);
+    }
+    float windowCentreY() const {
+        int h = 0;
+        SDL_GetWindowSize(window_, nullptr, &h);
+        return 0.5f * static_cast<float>(h);
+    }
+
+    // The weapon under the pointer, or -1 in the wheel's dead zone.
+    int wheelSelection() const {
+        float mouse_x = 0.0f;
+        float mouse_y = 0.0f;
+        SDL_GetMouseState(&mouse_x, &mouse_y);
+        return ui::weaponWheelSlot(mouse_x, mouse_y, windowCentreX(), windowCentreY(), kWheelDeadZone);
+    }
+
     void setKey(SDL_Scancode key, bool down) {
         switch (key) {
             case SDL_SCANCODE_W:
@@ -326,6 +366,9 @@ private:
         input_.keys.s = false;
     }
 
+    static constexpr float kWheelRadius = 150.0f;   // pixels
+    static constexpr float kWheelDeadZone = 40.0f;  // pixels
+
     SDL_Window* window_ = nullptr;
     SDL_GLContext gl_context_ = nullptr;
     InputState input_;
@@ -337,6 +380,8 @@ private:
     debug::DebugUi debug_ui_;
     uint64_t frame_count_ = 0;
     uint64_t last_ticks_ns_ = 0;
+    // Holding Q opens the weapon wheel; releasing it over a sector picks that weapon.
+    bool wheel_open_ = false;
     bool stick_active_ = false;
     bool camera_active_ = false;
     SDL_FingerID camera_finger_ = 0;

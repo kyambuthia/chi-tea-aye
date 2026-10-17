@@ -21,6 +21,9 @@ Minimal C++20 SDL3 game prototype.
 - Fists: F to punch.
 - Rifle: hold the right mouse button to aim down the scope (the view narrows and the scope overlay appears).
 - Rifle fire: Space fires one shot. The warrior plays the fire clip with the rifle held.
+- Weapon wheel: hold Q, point at a sector (rifle top, pistol right, fists bottom or left), and release Q to pick it. Releasing in the centre picks nothing.
+- Target practice: six pop-up targets stand in front of the start point. Space fires at the centre of the view, so line up a target with the view centre (aim by orbiting the camera and zooming, or hold the right mouse button with the rifle). Knocked-down targets stand again after three seconds. The dev panel counts hits and shots.
+- Camera: auto-recenter is off by default, so the camera keeps the angle you set. Turn it on in the dev panel to return to behind the warrior after orbiting.
 - F1: toggle the skeleton overlay (joints and bones), which also shows the current clip.
 
 The warrior model is `assets/characters/african_warrior.glb`, and the weapon props are

@@ -34,10 +34,12 @@ void WeaponState::attack() {
     }
 }
 
-void WeaponState::fire() {
+bool WeaponState::fire() {
     if (phase_ == Phase::Ready && active_ == WeaponSlot::Rifle && fire_time_ <= 0.0f) {
         fire_time_ = kFireTime;
+        return true;
     }
+    return false;
 }
 
 void WeaponState::setAiming(bool aiming) {

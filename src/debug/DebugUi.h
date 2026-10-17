@@ -30,7 +30,14 @@ public:
     bool handleEvent(const SDL_Event* event);
     bool wantsMouse() const;
     bool wantsKeyboard() const;
+    // The weapon wheel, drawn on top of the scene. hovered is the sector under the pointer, or -1.
+    void drawWeaponWheel(float cx, float cy, float radius, int hovered);
+    // Whether the camera recenters behind the warrior after orbiting (set from the panel).
+    bool autoRecenter() const;
     void cleanup();
+
+private:
+    bool auto_recenter_ = false;
 };
 
 } // namespace debug

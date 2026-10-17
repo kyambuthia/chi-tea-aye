@@ -25,6 +25,7 @@ struct InputState {
     int weapon_request = -1;  // 0 rifle, 1 pistol, 2 fists; -1 none
     bool attack_pressed = false;
     bool fire_pressed = false;
+    bool crouch_pressed = false;
     bool aim_held = false;
     float look_dx = 0.0f;
     float look_dy = 0.0f;

@@ -161,13 +161,54 @@ int main() {
     }
 
     // 6. The world edge holds: walking into it stops the player inside the terrain.
+    //    (Walks along +X, which is clear of the walls.)
+    {
+        Sim sim;
+        sim.input.keys.a = true;  // +X, with the camera behind the start point
+        sim.step(30.0f);
+        const float edge = world::World::kHalfSize - 0.5f;
+        std::printf("edge: stopped at x = %.2f (want %.2f)\n", sim.game.playerX(), edge);
+        if (std::fabs(sim.game.playerX() - edge) > 0.01f) ++failures;
+    }
+
+    // 7. Walls: walking into the low wall stops the warrior short of its face.
     {
         Sim sim;
         sim.input.keys.w = true;
-        sim.step(30.0f);
-        const float edge = world::World::kHalfSize - 0.5f;
-        std::printf("edge: stopped at z = %.2f (want %.2f)\n", sim.game.playerZ(), edge);
-        if (std::fabs(sim.game.playerZ() - edge) > 0.01f) ++failures;
+        sim.step(4.0f);
+        const float face = 4.6f - 0.35f;  // the wall's near face, less the warrior's radius
+        std::printf("wall: stopped at z = %.2f (want just under %.2f)\n", sim.game.playerZ(), face);
+        if (sim.game.playerZ() > face + 0.01f || sim.game.playerZ() < face - 0.2f) ++failures;
+    }
+
+    // 8. Crouching: a slower walk, and the crouch clips.
+    {
+        Sim standing;
+        standing.input.keys.w = true;
+        standing.step(1.0f);
+        Sim crouched;
+        crouched.input.tapped.w = false;
+        crouched.input.crouch_pressed = true;
+        crouched.step(kStep);
+        crouched.input.keys.w = true;
+        crouched.step(1.0f);
+        const float stand_speed = standing.distanceFromOrigin();
+        const float crouch_speed = crouched.distanceFromOrigin();
+        std::printf("crouch: %.2f m in 1 s crouched, %.2f m standing; clip %s\n", crouch_speed, stand_speed, crouched.game.clipName());
+        if (!(crouch_speed < stand_speed - 0.3f) || std::strcmp(crouched.game.clipName(), "CrouchWalk") != 0) ++failures;
+
+        Sim toggled;
+        toggled.input.crouch_pressed = true;
+        toggled.step(kStep);
+        toggled.input.crouch_pressed = false;
+        toggled.step(0.1f);
+        if (!toggled.game.crouched()) ++failures;
+        toggled.input.crouch_pressed = true;
+        toggled.step(kStep);
+        toggled.input.crouch_pressed = false;
+        toggled.step(0.1f);
+        if (toggled.game.crouched()) ++failures;
+        std::printf("crouch toggles on and off with the key: %s\n", failures == 0 ? "yes" : "see above");
     }
 
     std::printf(failures == 0 ? "MOVEMENT OK\n" : "%d FAILURE(S)\n", failures);

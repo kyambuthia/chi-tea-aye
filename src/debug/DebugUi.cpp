@@ -3,11 +3,13 @@
 #include "app/InputState.h"
 #include "gameplay/GameState.h"
 #include "renderer/Renderer.h"
+#include "ui/WeaponWheel.h"
 
 #include "imgui.h"
 #include "imgui_impl_opengl3.h"
 #include "imgui_impl_sdl3.h"
 
+#include <cmath>
 #include <cstdio>
 
 namespace debug {
@@ -248,7 +250,11 @@ void DebugUi::draw(const gameplay::GameState& gameplay, const app::InputState& i
     // Looping clips wrap, so show the time within the clip, not the time since it started.
     std::snprintf(clip_text, sizeof(clip_text), "%s  %.2f / %.2fs", gameplay.clipName(), clip_time, clip_duration);
     drawStatRow("Clip", clip_text);
+    char target_text[48]{};
+    std::snprintf(target_text, sizeof(target_text), "%d hit / %d shots", gameplay.targets().hits(), gameplay.targets().shots());
+    drawStatRow("Targets", target_text);
     ImGui::Checkbox("Show skeleton (F1)", &style.show_skeleton);
+    ImGui::Checkbox("Auto-recenter camera", &auto_recenter_);
 
     ImGui::Separator();
 
@@ -276,6 +282,39 @@ bool DebugUi::wantsMouse() const {
 
 bool DebugUi::wantsKeyboard() const {
     return ImGui::GetIO().WantCaptureKeyboard;
+}
+
+void DebugUi::drawWeaponWheel(float cx, float cy, float radius, int hovered) {
+    ImDrawList* draw = ImGui::GetForegroundDrawList();
+    const ImVec2 centre(cx, cy);
+    const char* labels[ui::kWeaponWheelSlots] = {"Rifle", "Pistol", "Fists"};
+    const float kPi = 3.14159265358979323846f;
+    constexpr int kArcSegments = 24;
+
+    draw->AddCircleFilled(centre, radius, IM_COL32(18, 20, 26, 215), 96);
+    for (int slot = 0; slot < ui::kWeaponWheelSlots; ++slot) {
+        // Sector edges, in degrees clockwise from the top.
+        const float start = slot * 120.0f - 60.0f;
+        draw->PathClear();
+        draw->PathLineTo(centre);
+        for (int k = 0; k <= kArcSegments; ++k) {
+            const float deg = start + 120.0f * k / kArcSegments;
+            const float rad = deg * kPi / 180.0f;
+            draw->PathLineTo(ImVec2(cx + radius * std::sin(rad), cy - radius * std::cos(rad)));
+        }
+        const ImU32 fill = slot == hovered ? IM_COL32(230, 150, 60, 235) : IM_COL32(60, 64, 76, 215);
+        draw->PathFillConvex(fill);
+
+        const float mid = (slot * 120.0f) * kPi / 180.0f;
+        const ImVec2 at(cx + radius * 0.62f * std::sin(mid), cy - radius * 0.62f * std::cos(mid));
+        const ImVec2 size = ImGui::CalcTextSize(labels[slot]);
+        draw->AddText(ImVec2(at.x - size.x * 0.5f, at.y - size.y * 0.5f), IM_COL32(245, 245, 245, 255), labels[slot]);
+    }
+    draw->AddCircle(centre, radius, IM_COL32(200, 205, 215, 180), 96, 2.0f);
+}
+
+bool DebugUi::autoRecenter() const {
+    return auto_recenter_;
 }
 
 void DebugUi::cleanup() {

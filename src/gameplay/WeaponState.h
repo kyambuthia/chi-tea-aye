@@ -27,7 +27,8 @@ public:
     void attack();
 
     // Rifle shot; only acts while the rifle is ready in hand and not already firing.
-    void fire();
+    // Returns true when a shot starts.
+    bool fire();
 
     // Right mouse: aim only while the rifle is ready in hand.
     void setAiming(bool aiming);
