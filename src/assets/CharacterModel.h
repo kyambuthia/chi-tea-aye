@@ -83,6 +83,8 @@ public:
         float upper_time = 0.0f;
         // Bend of the spine in radians; positive leans forward.
         float spine_bend = 0.0f;
+        // Model-space point the right hand is placed on (two-bone IK), or nullptr.
+        const float* right_hand_goal = nullptr;
         // Model-space point the left hand reaches for (two-bone IK), or nullptr.
         const float* left_hand_goal = nullptr;
     };
@@ -136,6 +138,7 @@ private:
     int hips_ = -1;
     int root_ = -1;  // the Root joint: its translation is the clip's root path
     int left_arm_[3] = {-1, -1, -1};  // upper arm, forearm, hand
+    int right_arm_[3] = {-1, -1, -1};
     int spine_[3] = {-1, -1, -1};     // spine segments, base to top
     bool has_feet_ = false;
     float front_yaw_ = 0.0f;

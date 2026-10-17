@@ -37,7 +37,7 @@ const math::Mat4 kRifleGrip = math::identity();
 // about the grip so the muzzle faces forward. The grip sits just behind the
 // receiver (toward the stock, +Z) and the fore-end just ahead of it (toward the
 // muzzle, -Z). Tuned by eye from a side view.
-const float kRifleGripLocal[3] = {0.0f, -0.05f, 0.12f};
+const float kRifleGripLocal[3] = {0.0f, -0.05f, 0.12f};  // the hand is 5 cm below the bore
 const float kRifleForegripLocal[3] = {0.0f, -0.03f, -0.2f};
 // The spine leans toward the aim: this many radians per radian of camera pitch, up to a limit.
 constexpr float kSpineBendPerPitch = 0.8f;
@@ -735,13 +735,25 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
         impl_->rifle_mesh.index_count > 0;
     impl_->muzzle_valid = false;
     Mat4 rifle_model = math::identity();
+    // Aimed, the grip is the sight grip on the aim line, and the right hand is solved
+    // onto it. Otherwise the hand, as the clip poses it, holds the rifle.
+    const bool aimed = rifle_held && weapon.aim() > 0.5f;
+    float grip_world[3] = {0.0f, 0.0f, 0.0f};
+    if (aimed) {
+        gameplay.sightGrip(grip_world);
+        request.right_hand_goal = grip_world;
+    }
     impl_->character->evaluatePose(request, root, impl_->ground_height, impl_->joint_matrices);
     if (rifle_held) {
         const Mat4 hand = math::multiply(impl_->joint_matrices[impl_->hand_joint],
             impl_->character->jointBindWorld(impl_->hand_joint));
         const Mat4 left = math::multiply(impl_->joint_matrices[impl_->left_hand_joint],
             impl_->character->jointBindWorld(impl_->left_hand_joint));
-        const float grip_world[3] = {hand.m[12], hand.m[13] - 0.3f * (1.0f - weapon.raise()), hand.m[14]};
+        if (!aimed) {
+            grip_world[0] = hand.m[12];
+            grip_world[1] = hand.m[13] - 0.3f * (1.0f - weapon.raise());
+            grip_world[2] = hand.m[14];
+        }
 
         // Direction: from the grip toward the fore-end the hands hold, blended into the
         // camera's aim line as the rifle is raised and fired. Shots go where the rifle points.

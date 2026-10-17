@@ -443,6 +443,9 @@ bool CharacterModel::load(const void* data, size_t size) {
     spine_[0] = findJoint("Spine");
     spine_[1] = findJoint("Spine1");
     spine_[2] = findJoint("Spine2");
+    right_arm_[0] = findJoint("RightArm");
+    right_arm_[1] = findJoint("RightForeArm");
+    right_arm_[2] = findJoint("RightHand");
     left_arm_[0] = findJoint("LeftArm");
     left_arm_[1] = findJoint("LeftForeArm");
     left_arm_[2] = findJoint("LeftHand");
@@ -668,6 +671,10 @@ void CharacterModel::evaluatePose(const PoseRequest& request, const math::Mat4& 
 
     if (ground && has_feet_) {
         applyFootIk(locals, root, ground);
+    }
+
+    if (request.right_hand_goal != nullptr && right_arm_[0] >= 0) {
+        solveTwoBone(locals, root, right_arm_[0], right_arm_[1], right_arm_[2], request.right_hand_goal);
     }
 
     if (request.left_hand_goal != nullptr && left_arm_[0] >= 0) {

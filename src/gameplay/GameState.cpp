@@ -27,9 +27,16 @@ constexpr float kFireBuffer = 0.15f;
 constexpr float kRecoilKick = 0.012f;
 constexpr float kRecoilSettle = 12.0f;
 // Sight view: the eye at the right shoulder, the look point this far ahead along the aim.
-constexpr float kSightHeight = 1.42f;
-constexpr float kSightSide = 0.12f;
-constexpr float kSightBack = 0.25f;
+// The right hand's grip in the warrior's own frame (feet at the origin, facing +Z),
+// measured from the aim pose: the hand the solver reaches on the right arm. Carrying it
+// through the warrior's terrain frame keeps it in reach on slopes.
+constexpr float kGripModel[3] = {-0.1f, 1.28f, 0.098f};
+// The bore sits this far above the grip (matches the rifle's grip offset in the renderer).
+constexpr float kGripBelowBore = 0.05f;
+// The eye sits this far behind the grip, this far above it and to the right, over the shoulder.
+constexpr float kSightBack = 0.35f;
+constexpr float kSightUp = 0.1f;
+constexpr float kSightRight = 0.25f;
 constexpr float kSightRange = 20.0f;
 // Lens distance kept between the camera and a wall it is pulled in front of.
 constexpr float kCameraWallMargin = 0.3f;
@@ -357,6 +364,17 @@ float GameState::clearCameraDistance(float wanted_distance) const {
     return std::fmax(0.6f, wall - kCameraWallMargin);
 }
 
+void GameState::sightGrip(float out[3]) const {
+    // The warrior's frame: on the terrain, tilted to its normal, turned to his yaw.
+    math::Mat4 frame = math::identity();
+    if (world_ != nullptr) {
+        frame = math::multiply(world_->groundFrame(player_x_, player_z_), math::rotationY(yaw_));
+    }
+    for (int c = 0; c < 3; ++c) {
+        out[c] = frame.m[c] * kGripModel[0] + frame.m[4 + c] * kGripModel[1] + frame.m[8 + c] * kGripModel[2] + frame.m[12 + c];
+    }
+}
+
 void GameState::cameraView(float eye[3], float look[3]) const {
     const float pitch = cameraPitch();
     const float az = camera_azimuth_;
@@ -372,24 +390,25 @@ void GameState::cameraView(float eye[3], float look[3]) const {
         orbit_look[2] + horizontal * std::cos(az),
     };
 
-    // Sight: the eye at the right shoulder, a little behind it, looking along the aim.
-    // The aim direction is the view's direction, so the rifle and the shot follow it.
+    // Sight: the grip, and the eye a little behind it along the aim. The rifle lies on
+    // the shot line, so the barrel is in the scope.
     const float forward[3] = {-std::sin(az) * std::cos(pitch), -std::sin(pitch), -std::cos(az) * std::cos(pitch)};
+    float grip[3];
+    sightGrip(grip);
+    // The rifle points along the view, so the crosshair marks where the barrel and the
+    // shots go. The eye sits over the right shoulder, outside the body, not on the bore:
+    // the arm is held at chest height, so an eye on the bore line would be inside the body.
+    const float bore[3] = {grip[0], grip[1] + kGripBelowBore, grip[2]};
     const float right[3] = {std::cos(az), 0.0f, -std::sin(az)};
-    const float shoulder[3] = {
-        player_x_ + right[0] * kSightSide,
-        kSightHeight,
-        player_z_ + right[2] * kSightSide,
-    };
     const float sight_eye[3] = {
-        shoulder[0] - forward[0] * kSightBack,
-        shoulder[1] - forward[1] * kSightBack,
-        shoulder[2] - forward[2] * kSightBack,
+        bore[0] - forward[0] * kSightBack + right[0] * kSightRight,
+        bore[1] - forward[1] * kSightBack + kSightUp,
+        bore[2] - forward[2] * kSightBack + right[2] * kSightRight,
     };
     const float sight_look[3] = {
-        shoulder[0] + forward[0] * kSightRange,
-        shoulder[1] + forward[1] * kSightRange,
-        shoulder[2] + forward[2] * kSightRange,
+        sight_eye[0] + forward[0] * kSightRange,
+        sight_eye[1] + forward[1] * kSightRange,
+        sight_eye[2] + forward[2] * kSightRange,
     };
 
     // Blend from the orbit view to the sight view as the rifle comes up.
