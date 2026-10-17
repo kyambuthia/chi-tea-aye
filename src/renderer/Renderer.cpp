@@ -24,8 +24,8 @@ using assets::MeshVertex;
 using math::Mat4;
 
 constexpr float kPi = 3.14159265358979323846f;
-constexpr int kGroundCells = 24;
-constexpr float kGroundHalfSize = 6.0f;
+constexpr int kGroundCells = 80;
+constexpr float kGroundHalfSize = world::World::kHalfSize;
 constexpr int kJoints = assets::kMaxJoints;
 
 // Grip offsets from the posed right hand to the prop's origin, tuned by eye.

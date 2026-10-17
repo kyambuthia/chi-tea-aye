@@ -17,6 +17,7 @@ struct MouseState {
 
 struct InputState {
     KeyState keys;
+    KeyState tapped;  // movement keys pressed since the last update
     MouseState mouse;
     // Camera orbit and zoom accumulated since the last update.
     bool orbit_drag = false;

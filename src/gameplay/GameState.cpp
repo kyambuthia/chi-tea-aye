@@ -11,24 +11,22 @@ namespace {
 
 constexpr float kPi = 3.14159265358979323846f;
 
-// Movement modes, chosen by the input direction relative to the facing.
+// Movement: the body turns toward the input and walks or runs forward. It never
+// strafes or walks backward, so every clip matches the way the body moves.
 // Speeds are the planted-foot speeds measured from each clip, so feet do not slide.
-constexpr float kForwardCone = 60.0f * kPi / 180.0f;   // within this: walk or run, turn to face it
-constexpr float kStrafeCone = 120.0f * kPi / 180.0f;   // within this: strafe, facing kept
 constexpr float kWalkSpeed = 1.65f;
 constexpr float kRunSpeed = 4.0f;
-constexpr float kStrafeSpeed = 1.8f;
-constexpr float kBackwardSpeed = 1.08f;
+constexpr float kTurnRate = 10.0f;             // radians per second
 
-// Velocity ramps toward the desired velocity: accelerating is slower than braking.
-constexpr float kAcceleration = 6.0f;          // meters per second squared
-constexpr float kDeceleration = 9.0f;
+// Velocity ramps toward the desired velocity. Stopping is as quick as starting:
+// full walk speed takes about 0.07 s either way.
+constexpr float kAcceleration = 25.0f;         // meters per second squared
+constexpr float kDeceleration = 25.0f;
 constexpr float kStopSpeed = 0.05f;
+constexpr float kEdgeMargin = 0.5f;            // the warrior stops this far inside the world edge
 
-// Facing turns faster for bigger angles: from the minimum rate for a small
-// correction up to the maximum for a turn at the edge of the forward cone.
-constexpr float kTurnRateSmall = 6.0f;         // radians per second
-constexpr float kTurnRateLarge = 12.0f;
+// A key press counts for at least one frame, so a tap inside one frame still moves.
+constexpr float kMinTapHold = 1.0f / 60.0f;
 
 // Camera spring times: how long the camera takes to settle (seconds).
 constexpr float kCameraAzimuthTime = 0.30f;
@@ -43,7 +41,7 @@ constexpr float kRecenterSpeed = 1.2f;         // radians per second
 constexpr float kOrbitSpeed = 0.006f;          // radians per pixel of drag
 constexpr float kMinPitch = -0.15f;
 constexpr float kMaxPitch = 1.1f;
-constexpr float kMinDistance = 1.5f;
+constexpr float kMinDistance = 2.0f;
 constexpr float kMaxDistance = 6.0f;
 
 // Signed angle from one heading to another, in (-pi, pi].
@@ -92,8 +90,7 @@ float approach(float current, float target, float factor) {
 void GameState::init() {}
 
 void GameState::update(const app::InputState& input, physics::Physics& physics, const world::World& world, float delta_time) {
-    (void)world;
-
+    (void)world;  // the edge comes from the world size constant
     // Orbit input moves the camera's goal directly. The camera does not follow
     // the warrior's heading while it moves, or the view would chase the turn
     // and spin: the input is read against the view, which turns the warrior.
@@ -109,7 +106,22 @@ void GameState::update(const app::InputState& input, physics::Physics& physics, 
 
     // Recenter slowly behind the warrior, only once the player has stopped
     // orbiting and stopped moving. Never while a movement key is held.
-    const bool has_movement_key = input.keys.w || input.keys.a || input.keys.s || input.keys.d;
+    // Movement reads the held keys plus any key pressed since the last frame.
+    // Each tap stays active for at least one frame.
+    app::InputState moves = input;
+    const bool pressed[4] = {input.tapped.w, input.tapped.a, input.tapped.s, input.tapped.d};
+    bool* keys[4] = {&moves.keys.w, &moves.keys.a, &moves.keys.s, &moves.keys.d};
+    for (int k = 0; k < 4; ++k) {
+        if (pressed[k]) {
+            tap_hold_[k] = kMinTapHold;
+        }
+        if (tap_hold_[k] > 0.0f) {
+            *keys[k] = true;
+            tap_hold_[k] -= delta_time;
+        }
+    }
+
+    const bool has_movement_key = moves.keys.w || moves.keys.a || moves.keys.s || moves.keys.d;
     if (!has_movement_key && idle_orbit_time_ > kRecenterDelay) {
         const float behind = yaw_ + kPi;
         const float offset = angleBetween(camera_goal_azimuth_, behind);
@@ -136,37 +148,24 @@ void GameState::update(const app::InputState& input, physics::Physics& physics, 
 
     float dir_x = 0.0f;
     float dir_z = 0.0f;
-    physics.inputDirection(input, camera_azimuth_, dir_x, dir_z);
+    physics.inputDirection(moves, camera_azimuth_, dir_x, dir_z);
     const bool has_input = dir_x != 0.0f || dir_z != 0.0f;
 
-    // Pick the movement mode from where the input points relative to the facing.
+    // The body turns toward the input, and moves only along its own facing once
+    // it faces the input, so the clip always matches the motion on screen.
     float desired_x = 0.0f;
     float desired_z = 0.0f;
     Clip next = Clip::Walk;
     if (has_input) {
         const float input_heading = std::atan2(dir_x, dir_z);
-        const float relative = angleBetween(yaw_, input_heading);
-        if (std::fabs(relative) <= kForwardCone) {
-            // Forward: turn to face the input and walk or run. Bigger turns turn faster.
-            const bool running = input.keys.shift;
-            next = running ? Clip::Run : Clip::Walk;
-            const float speed = running ? kRunSpeed : kWalkSpeed;
-            desired_x = dir_x * speed;
-            desired_z = dir_z * speed;
-            const float turn_fraction = std::fabs(relative) / kForwardCone;
-            const float turn_rate = kTurnRateSmall + (kTurnRateLarge - kTurnRateSmall) * turn_fraction;
-            yaw_ = turnToward(yaw_, input_heading, turn_rate * delta_time);
-        } else if (std::fabs(relative) <= kStrafeCone) {
-            // Sideways: keep facing and strafe. Positive is the warrior's left.
-            next = relative > 0.0f ? Clip::StrafeLeft : Clip::StrafeRight;
-            desired_x = dir_x * kStrafeSpeed;
-            desired_z = dir_z * kStrafeSpeed;
-        } else {
-            // Backward: keep facing and walk backward.
-            next = Clip::Backward;
-            desired_x = dir_x * kBackwardSpeed;
-            desired_z = dir_z * kBackwardSpeed;
-        }
+        yaw_ = turnToward(yaw_, input_heading, kTurnRate * delta_time);
+        const float align = std::fmax(0.0f, std::cos(angleBetween(yaw_, input_heading)));
+        const bool running = input.keys.shift;
+        next = running ? Clip::Run : Clip::Walk;
+        const float speed = (running ? kRunSpeed : kWalkSpeed) * align;
+        // Facing is +Z at zero yaw, so the forward direction is (sin, cos).
+        desired_x = std::sin(yaw_) * speed;
+        desired_z = std::cos(yaw_) * speed;
     }
 
     // Ramp the velocity toward the desired one.
@@ -185,6 +184,17 @@ void GameState::update(const app::InputState& input, physics::Physics& physics, 
     velocity_z_ += step_z;
 
     physics.integratePlayer(velocity_x_, velocity_z_, 1.0f, delta_time, player_x_, player_z_);
+
+    // The world has edges: stop at them rather than walking into empty space.
+    const float edge = world::World::kHalfSize - kEdgeMargin;
+    if (player_x_ > edge || player_x_ < -edge) {
+        player_x_ = std::fmax(-edge, std::fmin(edge, player_x_));
+        velocity_x_ = 0.0f;
+    }
+    if (player_z_ > edge || player_z_ < -edge) {
+        player_z_ = std::fmax(-edge, std::fmin(edge, player_z_));
+        velocity_z_ = 0.0f;
+    }
 
     const bool moving = std::sqrt(velocity_x_ * velocity_x_ + velocity_z_ * velocity_z_) > kStopSpeed;
     Clip clip = Clip::Idle;
@@ -235,12 +245,6 @@ const char* GameState::clipName() const {
             return "Walk";
         case Clip::Run:
             return "Run";
-        case Clip::Backward:
-            return "WalkBackwards";
-        case Clip::StrafeLeft:
-            return "StrafeLeft";
-        case Clip::StrafeRight:
-            return "StrafeRight";
         case Clip::Idle:
         default:
             return "Idle";

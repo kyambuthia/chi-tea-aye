@@ -1,6 +1,6 @@
-// Drives the gameplay state with fixed-step input and checks that the player
-// moves where the input points on screen: straight ahead of the camera, after
-// strafing, and after the camera is orbited with the mouse.
+// Drives the gameplay state with fixed-step input and checks movement: the player
+// goes where the input points on screen, taps register, starting and stopping are
+// quick, the world edge holds, and the clip matches the motion after an orbit.
 // Build and run from the repository root:
 //   cmake --build build --target movement_check && ./build/movement_check
 
@@ -11,6 +11,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 
 namespace {
 
@@ -22,18 +23,20 @@ struct Sim {
     physics::Physics physics;
     world::World world;
     app::InputState input;
-    float last_x = 0.0f;
-    float last_z = 0.0f;
 
+    // Runs whole frames. Taps are one-frame events, as the app delivers them.
     void step(float seconds) {
         const int frames = static_cast<int>(seconds / kStep + 0.5f);
         for (int i = 0; i < frames; ++i) {
-            last_x = game.playerX();
-            last_z = game.playerZ();
             game.update(input, physics, world, kStep);
             input.look_dx = 0.0f;
             input.look_dy = 0.0f;
+            input.tapped = app::KeyState{};
         }
+    }
+
+    float distanceFromOrigin() const {
+        return std::sqrt(game.playerX() * game.playerX() + game.playerZ() * game.playerZ());
     }
 };
 
@@ -66,30 +69,33 @@ int main() {
         Sim sim;
         sim.input.keys.w = true;
         sim.step(1.5f);
-        const float moved = headingOf(sim.game.playerX(), sim.game.playerZ());
-        // Camera is behind the player at rest, so screen forward is the facing, +Z.
-        const float error = angularError(moved, 0.0f);
+        const float error = angularError(headingOf(sim.game.playerX(), sim.game.playerZ()), 0.0f);
         std::printf("forward: moved heading %.1f deg off the camera forward (want < 3), speed %.2f m/s\n",
-            error, std::sqrt(sim.game.playerX() * sim.game.playerX() + sim.game.playerZ() * sim.game.playerZ()) / 1.5f);
+            error, sim.distanceFromOrigin() / 1.5f);
         if (error > 3.0f) ++failures;
     }
 
-    // 2. Strafe right: movement follows the camera's right, facing is kept.
+    // 2. Strafe right: the body turns right and walks there. Measured after the
+    //    turn (the first half second is the turn), so the motion and the facing
+    //    both end up on screen right.
     {
         Sim sim;
         sim.input.keys.d = true;
-        sim.step(1.0f);
+        sim.step(0.5f);
+        const float x0 = sim.game.playerX();
+        const float z0 = sim.game.playerZ();
+        sim.step(0.5f);
         float fx, fz, rx, rz;
         screenDirection(sim.game.cameraAzimuth(), fx, fz, rx, rz);
-        const float error = angularError(headingOf(sim.game.playerX(), sim.game.playerZ()), headingOf(rx, rz));
-        const float facing_drift = angularError(sim.game.playerYaw(), 0.0f);
-        std::printf("strafe right: moved %.1f deg off screen right (want < 3), facing drift %.1f deg (want < 3)\n",
-            error, facing_drift);
-        if (error > 3.0f || facing_drift > 3.0f) ++failures;
+        const float moved_error = angularError(headingOf(sim.game.playerX() - x0, sim.game.playerZ() - z0), headingOf(rx, rz));
+        const float facing_error = angularError(sim.game.playerYaw(), headingOf(rx, rz));
+        std::printf("right: moved %.1f deg off screen right (want < 3), facing %.1f deg off it (want < 3)\n",
+            moved_error, facing_error);
+        if (moved_error > 3.0f || facing_error > 3.0f) ++failures;
     }
 
-    // 3. Orbit the camera a quarter turn, let it settle, then walk forward: the
-    //    player must go where the camera now points, not where it pointed before.
+    // 3. Orbit a quarter turn, let the camera settle, then walk forward: the player
+    //    goes where the camera now points, and the clip is Walk, not a sideways one.
     {
         Sim sim;
         sim.input.orbit_drag = true;
@@ -107,9 +113,61 @@ int main() {
         screenDirection(sim.game.cameraAzimuth(), fx, fz, rx, rz);
         const float moved = headingOf(sim.game.playerX() - x0, sim.game.playerZ() - z0);
         const float error = angularError(moved, headingOf(fx, fz));
-        std::printf("orbit then forward: moved %.1f deg off the new screen forward (want < 5), facing %.1f deg from it\n",
-            error, angularError(sim.game.playerYaw(), headingOf(fx, fz)));
-        if (error > 5.0f) ++failures;
+        const bool walking = std::strcmp(sim.game.clipName(), "Walk") == 0;
+        std::printf("orbit then forward: moved %.1f deg off the new screen forward (want < 5), clip %s\n",
+            error, sim.game.clipName());
+        if (error > 5.0f || !walking) ++failures;
+    }
+
+    // 4. Taps: a press and release inside one frame still moves the player, and
+    //    movement follows the press time (a 40 ms tap moves about ten times a 5 ms one).
+    {
+        Sim sim;
+        for (int i = 0; i < 10; ++i) {
+            sim.input.tapped.w = true;  // pressed and released within one frame
+            sim.step(kStep);
+            sim.step(0.2f);
+        }
+        const float short_taps = sim.distanceFromOrigin();
+
+        Sim longer;
+        for (int i = 0; i < 10; ++i) {
+            longer.input.tapped.w = true;
+            longer.input.keys.w = true;
+            longer.step(0.04f);
+            longer.input.keys.w = false;
+            longer.step(0.2f);
+        }
+        const float long_taps = longer.distanceFromOrigin();
+        std::printf("10 taps of one frame: %.3f m; 10 taps of 40 ms: %.3f m (full speed would be 0.66 m)\n",
+            short_taps, long_taps);
+        if (short_taps <= 0.05f || long_taps <= 2.0f * short_taps) ++failures;
+    }
+
+    // 5. Start and stop: full walk speed within 0.15 s, and at most 0.10 m of slide.
+    {
+        Sim sim;
+        sim.input.keys.w = true;
+        sim.step(0.15f);
+        const float speed_at_start = sim.distanceFromOrigin() / 0.15f;
+        sim.step(1.0f);
+        sim.input.keys.w = false;
+        const float before_stop = sim.distanceFromOrigin();
+        sim.step(1.0f);
+        const float slide = sim.distanceFromOrigin() - before_stop;
+        std::printf("start: average %.2f m/s over the first 0.15 s (want > 1.3); stop slide %.3f m (want < 0.10)\n",
+            speed_at_start, slide);
+        if (speed_at_start < 1.3f || slide > 0.10f) ++failures;
+    }
+
+    // 6. The world edge holds: walking into it stops the player inside the terrain.
+    {
+        Sim sim;
+        sim.input.keys.w = true;
+        sim.step(30.0f);
+        const float edge = world::World::kHalfSize - 0.5f;
+        std::printf("edge: stopped at z = %.2f (want %.2f)\n", sim.game.playerZ(), edge);
+        if (std::fabs(sim.game.playerZ() - edge) > 0.01f) ++failures;
     }
 
     std::printf(failures == 0 ? "MOVEMENT OK\n" : "%d FAILURE(S)\n", failures);

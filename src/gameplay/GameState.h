@@ -26,8 +26,7 @@ public:
     float playerZ() const;
     // Heading in radians about +Y; zero faces +Z.
     float playerYaw() const;
-    // Name of the animation clip the player is in: "Idle", "Walk", "Run",
-    // "WalkBackwards", "StrafeLeft", or "StrafeRight".
+    // Name of the animation clip the player is in: "Idle", "Walk", or "Run".
     const char* clipName() const;
     // Seconds since the current clip started.
     float clipTime() const;
@@ -44,7 +43,7 @@ public:
     float cameraDistance() const;
 
 private:
-    enum class Clip { Idle, Walk, Run, Backward, StrafeLeft, StrafeRight };
+    enum class Clip { Idle, Walk, Run };
 
     float player_x_ = 0.0f;
     float player_z_ = 0.0f;
@@ -53,6 +52,8 @@ private:
     float yaw_ = 0.0f;
     float clip_time_ = 0.0f;
     Clip clip_ = Clip::Idle;
+    // W, A, S, D: seconds left to keep a tapped key active.
+    float tap_hold_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 
     // The camera's goal azimuth. Orbit input moves it directly; it recenters
     // behind the player only slowly, and only when the player is idle.

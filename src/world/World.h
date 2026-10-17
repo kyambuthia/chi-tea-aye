@@ -8,6 +8,8 @@ class World {
 public:
     // Height of the flat base ground; the terrain varies around it.
     static constexpr float kBaseHeight = -0.52f;
+    // The terrain spans [-kHalfSize, kHalfSize] on both ground axes.
+    static constexpr float kHalfSize = 20.0f;
 
     void init();
     void cleanup();
