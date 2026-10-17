@@ -5,6 +5,7 @@
 #include "gameplay/GameState.h"
 #include "math/Mat4.h"
 #include "renderer/GlApi.h"
+#include "world/World.h"
 
 #include <cmath>
 #include <cstddef>
@@ -20,7 +21,8 @@ using assets::MeshVertex;
 using math::Mat4;
 
 constexpr float kPi = 3.14159265358979323846f;
-constexpr float kGroundY = -0.52f;
+constexpr int kGroundCells = 24;
+constexpr float kGroundHalfSize = 6.0f;
 constexpr int kJoints = assets::kMaxJoints;
 
 static_assert(kJoints == 32, "the skinning shader declares joints[32]");
@@ -251,17 +253,52 @@ GLuint uploadTexture(const uint8_t* rgba, int width, int height) {
     return texture;
 }
 
-MeshVertex groundVertex(float x, float z, float r, float g, float b) {
-    MeshVertex v{};
-    v.position[0] = x;
-    v.position[1] = kGroundY;
-    v.position[2] = z;
-    v.normal[1] = 1.0f;
-    v.color[0] = r;
-    v.color[1] = g;
-    v.color[2] = b;
-    v.color[3] = 1.0f;
-    return v;
+// Terrain grid: heights come from the world, normals from its slopes, and
+// triangles wind counter-clockwise seen from above.
+void buildGround(const world::World& world, std::vector<MeshVertex>& vertices, std::vector<uint16_t>& indices) {
+    const int n = kGroundCells + 1;
+    const float step = 2.0f * kGroundHalfSize / kGroundCells;
+    const float eps = 0.01f;
+    vertices.clear();
+    for (int j = 0; j < n; ++j) {
+        for (int i = 0; i < n; ++i) {
+            const float x = -kGroundHalfSize + i * step;
+            const float z = -kGroundHalfSize + j * step;
+            const float slope_x = (world.groundHeight(x + eps, z) - world.groundHeight(x - eps, z)) / (2.0f * eps);
+            const float slope_z = (world.groundHeight(x, z + eps) - world.groundHeight(x, z - eps)) / (2.0f * eps);
+            const float len = std::sqrt(slope_x * slope_x + 1.0f + slope_z * slope_z);
+            MeshVertex v{};
+            v.position[0] = x;
+            v.position[1] = world.groundHeight(x, z);
+            v.position[2] = z;
+            v.normal[0] = -slope_x / len;
+            v.normal[1] = 1.0f / len;
+            v.normal[2] = -slope_z / len;
+            const bool light = ((i + j) & 1) == 0;
+            const float shade = light ? 0.11f : 0.10f;
+            v.color[0] = shade;
+            v.color[1] = shade + 0.01f;
+            v.color[2] = shade + 0.03f;
+            v.color[3] = 1.0f;
+            vertices.push_back(v);
+        }
+    }
+
+    indices.clear();
+    for (int j = 0; j < kGroundCells; ++j) {
+        for (int i = 0; i < kGroundCells; ++i) {
+            const uint16_t a = static_cast<uint16_t>(j * n + i);
+            const uint16_t b = static_cast<uint16_t>(a + 1);
+            const uint16_t c = static_cast<uint16_t>(a + n + 1);
+            const uint16_t d = static_cast<uint16_t>(a + n);
+            indices.push_back(a);
+            indices.push_back(c);
+            indices.push_back(b);
+            indices.push_back(a);
+            indices.push_back(d);
+            indices.push_back(c);
+        }
+    }
 }
 
 Mat4 perspectiveFor(int width, int height) {
@@ -289,23 +326,22 @@ struct Renderer::Impl {
     GLint toon_surface = -1;
 
     const assets::CharacterModel* character = nullptr;
+    const world::World* world = nullptr;
+    assets::GroundHeightFn ground_height;
     Mat4 joint_matrices[kJoints]{};
     StyleSettings style{};
 };
 
-void Renderer::init(const assets::CharacterModel& character) {
+void Renderer::init(const assets::CharacterModel& character, const world::World& world) {
     impl_ = new Impl{};
     impl_->character = &character;
+    impl_->world = &world;
+    impl_->ground_height = [&world](float x, float z) { return world.groundHeight(x, z); };
 
-    const MeshVertex ground_vertices[] = {
-        groundVertex(-6.0f, -6.0f, 0.11f, 0.12f, 0.14f),
-        groundVertex(6.0f, -6.0f, 0.11f, 0.12f, 0.14f),
-        groundVertex(6.0f, 6.0f, 0.10f, 0.11f, 0.13f),
-        groundVertex(-6.0f, 6.0f, 0.10f, 0.11f, 0.13f),
-    };
-    // Counter-clockwise when seen from above, matching the glTF meshes.
-    const uint16_t ground_indices[] = {0, 2, 1, 0, 3, 2};
-    impl_->ground = uploadMesh(ground_vertices, 4, ground_indices, 6);
+    std::vector<MeshVertex> ground_vertices;
+    std::vector<uint16_t> ground_indices;
+    buildGround(world, ground_vertices, ground_indices);
+    impl_->ground = uploadMesh(ground_vertices.data(), ground_vertices.size(), ground_indices.data(), ground_indices.size());
 
     const assets::CharacterMesh& mesh = character.mesh();
     impl_->warrior = uploadMesh(mesh.vertices.data(), mesh.vertices.size(), mesh.indices.data(), mesh.indices.size());
@@ -394,13 +430,16 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     glBindVertexArray(impl_->ground.vao);
     glDrawElements(GL_TRIANGLES, impl_->ground.index_count, GL_UNSIGNED_SHORT, nullptr);
 
-    // Warrior: pose the skeleton for the current clip, then draw skinned.
-    // Turn the rig so its measured front faces the heading.
-    const Mat4 model = math::multiply(math::translation(px, kGroundY, pz),
+    // Warrior: place the root on the terrain and turn it so its measured front
+    // faces the heading. The pose is solved in world space (with foot IK), so
+    // the model matrix is the identity.
+    const Mat4 root = math::multiply(math::translation(px, impl_->world->groundHeight(px, pz), pz),
         math::rotationY(gameplay.playerYaw() - impl_->character->frontYaw()));
-    impl_->character->evaluatePose(gameplay.clipName(), gameplay.clipTime(), impl_->joint_matrices);
+    impl_->character->evaluatePose(gameplay.clipName(), gameplay.clipTime(), root, impl_->ground_height,
+        impl_->joint_matrices);
+    const Mat4 model = math::identity();
     glUniformMatrix4fv(impl_->toon_joints, kJoints, GL_FALSE, impl_->joint_matrices[0].m);
-    glUniformMatrix4fv(impl_->toon_mvp, 1, GL_FALSE, math::multiply(view_projection, model).m);
+    glUniformMatrix4fv(impl_->toon_mvp, 1, GL_FALSE, view_projection.m);
     glUniformMatrix4fv(impl_->toon_model, 1, GL_FALSE, model.m);
     setToonSurface(false);
     glBindTexture(GL_TEXTURE_2D, impl_->warrior_texture);

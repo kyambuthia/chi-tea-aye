@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 struct cgltf_data;
@@ -12,6 +13,9 @@ struct cgltf_data;
 namespace assets {
 
 constexpr int kMaxJoints = 32;
+
+// Ground height (meters, +Y up) at a world ground position.
+using GroundHeightFn = std::function<float(float x, float z)>;
 
 struct CharacterMesh {
     std::vector<MeshVertex> vertices;
@@ -38,9 +42,13 @@ public:
     float frontYaw() const;
     bool hasClip(const char* name) const;
 
-    // Writes kMaxJoints joint matrices for the named clip at the given time,
-    // looping over the clip's duration. Unused slots are identity.
-    void evaluatePose(const char* clip_name, float time_seconds, math::Mat4* out) const;
+    // Writes kMaxJoints skinning matrices for the named clip at the given time,
+    // looping over the clip's duration. The matrices map the bind pose to the
+    // posed character in world space, with the character placed by root.
+    // With a ground function, the feet are solved onto the ground (foot IK) and
+    // the pelvis drops when a foot needs to reach down. Unused slots are identity.
+    void evaluatePose(const char* clip_name, float time_seconds, const math::Mat4& root,
+        const GroundHeightFn& ground, math::Mat4* out) const;
 
 private:
     // cgltf points into the file bytes for the GLB binary chunk, so keep a copy alive.
@@ -58,6 +66,22 @@ private:
     std::vector<math::Mat4> rest_local_rig_;
     std::vector<math::Mat4> rest_local_bind_;
     float front_yaw_ = 0.0f;
+
+    // Per foot: the chain the IK solves (thigh, knee, ankle, toe), and the
+    // heights of the sole below the ankle and of the toe above its lowest point.
+    struct FootChain {
+        int up = -1;
+        int leg = -1;
+        int foot = -1;
+        int toe = -1;
+        float ankle = 0.0f;
+        float toe_offset = 0.0f;
+    };
+    FootChain feet_[2];
+    int hips_ = -1;
+    bool has_feet_ = false;
+
+    void applyFootIk(std::vector<math::Mat4>& local, const math::Mat4& root, const GroundHeightFn& ground) const;
 };
 
 } // namespace assets

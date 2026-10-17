@@ -81,7 +81,7 @@ public:
         world_.init();
         physics_.init();
         gameplay_.init();
-        renderer_.init(assets_.character());
+        renderer_.init(assets_.character(), world_);
         debug_ui_.init(window_, gl_context_, kGlslVersion);
 
         last_ticks_ns_ = SDL_GetTicksNS();

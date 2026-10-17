@@ -300,7 +300,51 @@ bool CharacterModel::load(const void* data, size_t size) {
     }
 
     front_yaw_ = kMeshFrontYaw;
+
+    // Foot IK: the leg chains and the sole's height below each ankle, measured
+    // from the bind pose's foot and toe vertices.
+    auto findNode = [&](const char* name) -> int {
+        for (size_t n = 0; n < node_count; ++n) {
+            if (gltf_->nodes[n].name != nullptr && std::strcmp(gltf_->nodes[n].name, name) == 0) {
+                return static_cast<int>(n);
+            }
+        }
+        return -1;
+    };
+    hips_ = findNode("Hips");
+    const char* sides[2][3] = {{"LeftUpLeg", "LeftLeg", "LeftFoot"}, {"RightUpLeg", "RightLeg", "RightFoot"}};
+    const char* toes[2] = {"LeftToeBase", "RightToeBase"};
+    has_feet_ = hips_ >= 0;
+    for (int side = 0; side < 2 && has_feet_; ++side) {
+        FootChain& chain = feet_[side];
+        chain.up = findNode(sides[side][0]);
+        chain.leg = findNode(sides[side][1]);
+        chain.foot = findNode(sides[side][2]);
+        const int toe = findNode(toes[side]);
+        if (chain.up < 0 || chain.leg < 0 || chain.foot < 0 || toe < 0 ||
+            joint_of_node[chain.foot] < 0 || joint_of_node[toe] < 0) {
+            has_feet_ = false;
+            break;
+        }
+        chain.toe = toe;
+        const float foot_y = worldFromLocal(gltf_, &gltf_->nodes[chain.foot], rest_local_bind_).m[13];
+        const float toe_y = worldFromLocal(gltf_, &gltf_->nodes[toe], rest_local_bind_).m[13];
+        float lowest_foot = foot_y;
+        float lowest_toe = toe_y;
+        for (const MeshVertex& v : mesh_.vertices) {
+            const int dominant = static_cast<int>(v.weights[0] >= v.weights[1] ? v.joints[0] : v.joints[1]);
+            if (dominant == joint_of_node[chain.foot] && v.position[1] < lowest_foot) {
+                lowest_foot = v.position[1];
+            }
+            if (dominant == joint_of_node[toe] && v.position[1] < lowest_toe) {
+                lowest_toe = v.position[1];
+            }
+        }
+        chain.ankle = foot_y - lowest_foot;
+        chain.toe_offset = toe_y - lowest_toe;
+    }
     return true;
+
 }
 
 void CharacterModel::cleanup() {
@@ -316,6 +360,8 @@ void CharacterModel::cleanup() {
     rest_local_rig_.clear();
     rest_local_bind_.clear();
     front_yaw_ = 0.0f;
+    has_feet_ = false;
+    hips_ = -1;
 }
 
 const CharacterMesh& CharacterModel::mesh() const {
@@ -338,7 +384,8 @@ bool CharacterModel::hasClip(const char* name) const {
     return false;
 }
 
-void CharacterModel::evaluatePose(const char* clip_name, float time_seconds, math::Mat4* out) const {
+void CharacterModel::evaluatePose(const char* clip_name, float time_seconds, const math::Mat4& root,
+    const GroundHeightFn& ground, math::Mat4* out) const {
     for (int j = 0; j < kMaxJoints; ++j) {
         out[j] = math::identity();
     }
@@ -397,9 +444,216 @@ void CharacterModel::evaluatePose(const char* clip_name, float time_seconds, mat
         local[n] = animated[n] ? math::fromTrs(trs[n].t, trs[n].r, trs[n].s) : rest_local_bind_[n];
     }
 
+    if (ground && has_feet_) {
+        applyFootIk(local, root, ground);
+    }
+
     for (size_t j = 0; j < joint_nodes_.size(); ++j) {
         const auto* joint = static_cast<const cgltf_node*>(joint_nodes_[j]);
-        out[j] = math::multiply(worldFromLocal(gltf_, joint, local), inverse_bind_[j]);
+        out[j] = math::multiply(math::multiply(root, worldFromLocal(gltf_, joint, local)), inverse_bind_[j]);
+    }
+}
+
+namespace {
+
+// Foot targets: a foot closer than kPlantedClearance above the ground is pinned
+// to it; beyond kSwingClearance it is left to the animation.
+constexpr float kPlantedClearance = 0.10f;
+constexpr float kSwingClearance = 0.20f;
+constexpr float kMaxPelvisDrop = 0.25f;
+
+void position(const math::Mat4& m, float out[3]) {
+    out[0] = m.m[12];
+    out[1] = m.m[13];
+    out[2] = m.m[14];
+}
+
+void sub3(const float a[3], const float b[3], float out[3]) {
+    out[0] = a[0] - b[0];
+    out[1] = a[1] - b[1];
+    out[2] = a[2] - b[2];
+}
+
+float length3(const float v[3]) {
+    return std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+}
+
+void normalize3(float v[3]) {
+    const float len = length3(v);
+    if (len > 1e-9f) {
+        v[0] /= len;
+        v[1] /= len;
+        v[2] /= len;
+    }
+}
+
+void cross3(const float a[3], const float b[3], float out[3]) {
+    out[0] = a[1] * b[2] - a[2] * b[1];
+    out[1] = a[2] * b[0] - a[0] * b[2];
+    out[2] = a[0] * b[1] - a[1] * b[0];
+}
+
+float dot3(const float a[3], const float b[3]) {
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+// Applies a rotation matrix to the vector from its pivot to a point.
+void rotatePoint(const math::Mat4& rotation, const float pivot[3], const float point[3], float out[3]) {
+    const float d[3] = {point[0] - pivot[0], point[1] - pivot[1], point[2] - pivot[2]};
+    out[0] = pivot[0] + rotation.m[0] * d[0] + rotation.m[4] * d[1] + rotation.m[8] * d[2];
+    out[1] = pivot[1] + rotation.m[1] * d[0] + rotation.m[5] * d[1] + rotation.m[9] * d[2];
+    out[2] = pivot[2] + rotation.m[2] * d[0] + rotation.m[6] * d[1] + rotation.m[10] * d[2];
+}
+
+} // namespace
+
+void CharacterModel::applyFootIk(std::vector<math::Mat4>& local, const math::Mat4& root, const GroundHeightFn& ground) const {
+    auto worldOf = [&](int n) {
+        return math::multiply(root, worldFromLocal(gltf_, &gltf_->nodes[n], local));
+    };
+    // Sets a node's world transform by changing its local transform.
+    auto setWorld = [&](int n, const math::Mat4& world) {
+        const cgltf_node* node = &gltf_->nodes[n];
+        const math::Mat4 parent = node->parent != nullptr
+            ? worldOf(static_cast<int>(nodeIndex(gltf_, node->parent)))
+            : root;
+        local[n] = math::multiply(math::affineInverse(parent), world);
+    };
+
+    // How far each foot must move to meet the ground, weighted by how close it
+    // already is: a planted foot follows the ground fully, a swinging one not at all.
+    float weight[2] = {0.0f, 0.0f};
+    float shift = 0.0f;
+    for (int side = 0; side < 2; ++side) {
+        const FootChain& chain = feet_[side];
+        float p[3];
+        position(worldOf(chain.foot), p);
+        const float target_y = ground(p[0], p[2]) + chain.ankle;
+        const float clearance = p[1] - target_y;
+        const float t = (kSwingClearance - clearance) / (kSwingClearance - kPlantedClearance);
+        weight[side] = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+        const float needed = weight[side] * (target_y - p[1]);
+        if (needed < shift) {
+            shift = needed;
+        }
+    }
+
+    // Drop the pelvis so the lower foot can reach the ground. Never raise it.
+    if (shift < -kMaxPelvisDrop) {
+        shift = -kMaxPelvisDrop;
+    }
+    if (shift < 0.0f) {
+        setWorld(hips_, math::multiply(math::translation(0.0f, shift, 0.0f), worldOf(hips_)));
+    }
+
+    for (int side = 0; side < 2; ++side) {
+        if (weight[side] <= 0.0f) {
+            continue;
+        }
+        const FootChain& chain = feet_[side];
+
+        float hip[3], knee[3], ankle[3];
+        position(worldOf(chain.up), hip);
+        position(worldOf(chain.leg), knee);
+        position(worldOf(chain.foot), ankle);
+
+        // Aim the foot at the ground under it, partially for a swinging foot.
+        const float ground_y = ground(ankle[0], ankle[2]) + chain.ankle;
+        const float goal[3] = {ankle[0], ankle[1] + weight[side] * (ground_y - ankle[1]), ankle[2]};
+
+        // Two-bone solve in the plane through hip, knee, and goal.
+        float hip_to_knee[3], knee_to_ankle[3], hip_to_goal[3];
+        sub3(knee, hip, hip_to_knee);
+        sub3(ankle, knee, knee_to_ankle);
+        sub3(goal, hip, hip_to_goal);
+        const float upper = length3(hip_to_knee);
+        const float lower = length3(knee_to_ankle);
+        float reach = length3(hip_to_goal);
+        const float max_reach = (upper + lower) * 0.999f;
+        if (reach > max_reach) {
+            reach = max_reach;
+        }
+        if (reach < 1e-4f) {
+            continue;
+        }
+        float dir[3] = {hip_to_goal[0], hip_to_goal[1], hip_to_goal[2]};
+        normalize3(dir);
+
+        const float cos_hip = (upper * upper + reach * reach - lower * lower) / (2.0f * upper * reach);
+        const float sin_hip = std::sqrt(std::fmax(0.0f, 1.0f - cos_hip * cos_hip));
+
+        // The knee keeps the side it already bends toward.
+        float plane_normal[3];
+        cross3(dir, hip_to_knee, plane_normal);
+        if (length3(plane_normal) < 1e-6f) {
+            // Knee on the line to the goal: bend along the model's front.
+            const float forward[3] = {0.0f, 0.0f, 1.0f};
+            cross3(dir, forward, plane_normal);
+        }
+        normalize3(plane_normal);
+        float bend[3];
+        cross3(plane_normal, dir, bend);
+        if (dot3(bend, hip_to_knee) < 0.0f) {
+            bend[0] = -bend[0];
+            bend[1] = -bend[1];
+            bend[2] = -bend[2];
+        }
+        normalize3(bend);
+
+        float new_knee[3], new_goal[3];
+        for (int c = 0; c < 3; ++c) {
+            new_knee[c] = hip[c] + upper * (cos_hip * dir[c] + sin_hip * bend[c]);
+            new_goal[c] = hip[c] + reach * dir[c];
+        }
+
+        // Rotate the thigh so the knee lands on new_knee, then the shin so the
+        // ankle lands on the goal. Each rotation pivots on its joint.
+        float knee_dir[3], new_knee_dir[3];
+        sub3(knee, hip, knee_dir);
+        sub3(new_knee, hip, new_knee_dir);
+        normalize3(knee_dir);
+        normalize3(new_knee_dir);
+        const math::Mat4 thigh_rotation = math::rotateAbout(math::rotationBetween(knee_dir, new_knee_dir), hip);
+
+        float ankle_after[3];
+        rotatePoint(thigh_rotation, hip, ankle, ankle_after);
+        float shin_from[3], shin_to[3];
+        sub3(ankle_after, new_knee, shin_from);
+        sub3(new_goal, new_knee, shin_to);
+        normalize3(shin_from);
+        normalize3(shin_to);
+        const math::Mat4 shin_rotation = math::rotateAbout(math::rotationBetween(shin_from, shin_to), new_knee);
+
+        // All three worlds are read before any is set, so the order cannot matter.
+        const math::Mat4 new_up = math::multiply(thigh_rotation, worldOf(chain.up));
+        const math::Mat4 new_leg = math::multiply(shin_rotation, math::multiply(thigh_rotation, worldOf(chain.leg)));
+        const math::Mat4 new_foot = math::multiply(shin_rotation, math::multiply(thigh_rotation, worldOf(chain.foot)));
+        setWorld(chain.up, new_up);
+        setWorld(chain.leg, new_leg);
+        setWorld(chain.foot, new_foot);
+
+        // Pitch the foot about the ankle so the toe meets the ground too. The
+        // toe is a child of the foot, so it moves with it.
+        float ankle_now[3], toe_now[3];
+        position(worldOf(chain.foot), ankle_now);
+        position(worldOf(chain.toe), toe_now);
+        const float toe_goal_y = ground(toe_now[0], toe_now[2]) + chain.toe_offset;
+        const float toe_clearance = toe_now[1] - toe_goal_y;
+        const float pitch_weight = toe_clearance < 0.0f ? 1.0f : 0.0f;  // only pull the toe up
+        if (pitch_weight > 0.0f) {
+            float from[3], to[3];
+            sub3(toe_now, ankle_now, from);
+            to[0] = from[0];
+            to[1] = from[1] - toe_clearance;
+            to[2] = from[2];
+            normalize3(from);
+            normalize3(to);
+            // Small adjustments only: a bigger pitch means the ground is not under this foot.
+            if (dot3(from, to) > std::cos(0.6f)) {
+                const math::Mat4 pitch = math::rotateAbout(math::rotationBetween(from, to), ankle_now);
+                setWorld(chain.foot, math::multiply(pitch, worldOf(chain.foot)));
+            }
+        }
     }
 }
 

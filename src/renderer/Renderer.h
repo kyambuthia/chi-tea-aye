@@ -8,6 +8,10 @@ namespace gameplay {
 class GameState;
 }
 
+namespace world {
+class World;
+}
+
 namespace renderer {
 
 struct StyleSettings {
@@ -22,8 +26,8 @@ struct StyleSettings {
 
 class Renderer {
 public:
-    // Requires a current GL context. The character must outlive the renderer.
-    void init(const assets::CharacterModel& character);
+    // Requires a current GL context. The character and world must outlive the renderer.
+    void init(const assets::CharacterModel& character, const world::World& world);
     void draw(const gameplay::GameState& gameplay, int framebuffer_width, int framebuffer_height);
     StyleSettings& styleSettings();
     void cleanup();

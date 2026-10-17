@@ -1,7 +1,6 @@
 // Samples every warrior animation clip and checks that the poses are sane.
 // Build and run from the repository root:
-//   g++ -std=c++20 -Isrc -Iexternal/cgltf -Iexternal/stb tests/clip_check.cpp \
-//       src/assets/CharacterModel.cpp -o build/clip_check && ./build/clip_check
+//   g++ -std=c++20 -Isrc -Iexternal/cgltf -Iexternal/stb tests/clip_check.cpp src/assets/CharacterModel.cpp -o build/clip_check && ./build/clip_check
 
 #include "assets/CharacterModel.h"
 
@@ -85,10 +84,10 @@ int main() {
         float max_y = -1e9f;
         float total_motion = 0.0f;
 
-        model.evaluatePose(clip, 0.0f, prev.data());
+        model.evaluatePose(clip, 0.0f, math::identity(), {}, prev.data());
         for (int f = 0; f <= frames; ++f) {
             const float t = f / kFps;
-            model.evaluatePose(clip, t, cur.data());
+            model.evaluatePose(clip, t, math::identity(), {}, cur.data());
 
             bool finite = true;
             for (const auto& m : cur) {
@@ -120,12 +119,12 @@ int main() {
         }
 
         // Looping: some later time should return to the start pose.
-        model.evaluatePose(clip, 0.0f, prev.data());
+        model.evaluatePose(clip, 0.0f, math::identity(), {}, prev.data());
         std::vector<math::Mat4> wrap(assets::kMaxJoints);
         float loop_at = 0.0f;
         float best_diff = 1e9f;
         for (float t = 0.5f; t <= 10.5f; t += 0.01f) {
-            model.evaluatePose(clip, t, wrap.data());
+            model.evaluatePose(clip, t, math::identity(), {}, wrap.data());
             float diff = 0.0f;
             for (int j = 0; j < 23; ++j) {
                 for (int k = 0; k < 16; ++k) {
@@ -146,8 +145,8 @@ int main() {
         int moving_joints = 0;
         std::vector<math::Mat4> pose_a(assets::kMaxJoints);
         std::vector<math::Mat4> pose_b(assets::kMaxJoints);
-        model.evaluatePose(clip, 0.0f, pose_a.data());
-        model.evaluatePose(clip, 0.7f, pose_b.data());
+        model.evaluatePose(clip, 0.0f, math::identity(), {}, pose_a.data());
+        model.evaluatePose(clip, 0.7f, math::identity(), {}, pose_b.data());
         for (int j = 0; j < 23; ++j) {
             float d = 0.0f;
             for (int k = 0; k < 16; ++k) {

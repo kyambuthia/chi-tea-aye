@@ -159,4 +159,45 @@ inline Mat4 affineInverse(const Mat4& a) {
     return out;
 }
 
+// Rotation taking unit vector from onto unit vector to, about the origin.
+inline Mat4 rotationBetween(const float from[3], const float to[3]) {
+    const float dot = from[0] * to[0] + from[1] * to[1] + from[2] * to[2];
+    float axis[3] = {from[1] * to[2] - from[2] * to[1],
+                     from[2] * to[0] - from[0] * to[2],
+                     from[0] * to[1] - from[1] * to[0]};
+    float q[4];
+    if (dot < -0.999999f) {
+        // Opposite vectors: turn half a revolution about any perpendicular axis.
+        float perp[3] = {0.0f, 0.0f, 0.0f};
+        perp[0] = std::fabs(from[0]) < 0.9f ? 1.0f : 0.0f;
+        perp[1] = perp[0] == 0.0f ? 1.0f : 0.0f;
+        float a[3] = {from[1] * perp[2] - from[2] * perp[1],
+                      from[2] * perp[0] - from[0] * perp[2],
+                      from[0] * perp[1] - from[1] * perp[0]};
+        const float len = std::sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+        q[0] = a[0] / len;
+        q[1] = a[1] / len;
+        q[2] = a[2] / len;
+        q[3] = 0.0f;
+    } else {
+        q[0] = axis[0];
+        q[1] = axis[1];
+        q[2] = axis[2];
+        q[3] = 1.0f + dot;
+        const float len = std::sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]);
+        for (float& v : q) {
+            v /= len;
+        }
+    }
+    const float t[3] = {0.0f, 0.0f, 0.0f};
+    const float unit[3] = {1.0f, 1.0f, 1.0f};
+    return fromTrs(t, q, unit);
+}
+
+// Applies a rotation about a pivot point rather than the origin.
+inline Mat4 rotateAbout(const Mat4& rotation, const float pivot[3]) {
+    return multiply(translation(pivot[0], pivot[1], pivot[2]),
+        multiply(rotation, translation(-pivot[0], -pivot[1], -pivot[2])));
+}
+
 } // namespace math
