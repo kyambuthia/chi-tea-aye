@@ -16,6 +16,7 @@ public:
     static constexpr float kSwitchTime = 0.35f;  // seconds for each half of a switch
     static constexpr float kAttackTime = 0.70f;  // seconds for one punch
     static constexpr float kAimTime = 0.20f;     // seconds for the aim transition
+    static constexpr float kFireTime = 1.17f;    // seconds for one rifle shot, the length of RifleFire
 
     WeaponState() = default;
 
@@ -24,6 +25,9 @@ public:
 
     // Fist attack; only acts while fists are ready in hand.
     void attack();
+
+    // Rifle shot; only acts while the rifle is ready in hand and not already firing.
+    void fire();
 
     // Right mouse: aim only while the rifle is ready in hand.
     void setAiming(bool aiming);
@@ -40,6 +44,9 @@ public:
     bool attacking() const { return attack_time_ > 0.0f; }
     float attackProgress() const;  // 0 at the start of a punch, 1 when it ends
 
+    bool firing() const { return fire_time_ > 0.0f; }
+    float fireProgress() const;    // 0 at the start of a shot, 1 when it ends
+
     // Aim amount, 0 hip-fire to 1 fully aimed down sights.
     float aim() const { return aim_; }
 
@@ -49,6 +56,7 @@ private:
     Phase phase_ = Phase::Ready;
     float phase_time_ = 0.0f;
     float attack_time_ = 0.0f;
+    float fire_time_ = 0.0f;
     bool aiming_ = false;
     float aim_ = 0.0f;
 };

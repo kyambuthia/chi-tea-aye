@@ -34,6 +34,12 @@ void WeaponState::attack() {
     }
 }
 
+void WeaponState::fire() {
+    if (phase_ == Phase::Ready && active_ == WeaponSlot::Rifle && fire_time_ <= 0.0f) {
+        fire_time_ = kFireTime;
+    }
+}
+
 void WeaponState::setAiming(bool aiming) {
     aiming_ = aiming;
 }
@@ -41,6 +47,9 @@ void WeaponState::setAiming(bool aiming) {
 void WeaponState::update(float delta_time) {
     if (attack_time_ > 0.0f) {
         attack_time_ = std::max(0.0f, attack_time_ - delta_time);
+    }
+    if (fire_time_ > 0.0f) {
+        fire_time_ = std::max(0.0f, fire_time_ - delta_time);
     }
 
     if (phase_ == Phase::Lowering) {
@@ -81,6 +90,10 @@ float WeaponState::raise() const {
 
 float WeaponState::attackProgress() const {
     return attack_time_ > 0.0f ? 1.0f - attack_time_ / kAttackTime : 0.0f;
+}
+
+float WeaponState::fireProgress() const {
+    return fire_time_ > 0.0f ? 1.0f - fire_time_ / kFireTime : 0.0f;
 }
 
 } // namespace gameplay
