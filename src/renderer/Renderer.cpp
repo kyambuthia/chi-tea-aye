@@ -33,8 +33,12 @@ constexpr int kJoints = assets::kMaxJoints;
 const math::Mat4 kRifleGrip = math::identity();
 // The rifle's grip and fore-end points in prop space, in metres from the prop's centre.
 // The grip is under the receiver; the fore-end is the front of the handguard. Tuned by eye.
-const float kRifleGripLocal[3] = {0.0f, -0.05f, -0.12f};
-const float kRifleForegripLocal[3] = {0.0f, -0.03f, 0.2f};
+// The rifle mesh points its muzzle along -Z; the held rifle turns it half a turn
+// about the grip so the muzzle faces forward. The grip sits just behind the
+// receiver (toward the stock, +Z) and the fore-end just ahead of it (toward the
+// muzzle, -Z). Tuned by eye from a side view.
+const float kRifleGripLocal[3] = {0.0f, -0.05f, 0.05f};
+const float kRifleForegripLocal[3] = {0.0f, -0.03f, -0.2f};
 const math::Mat4 kPistolGrip = math::identity();
 
 static_assert(kJoints == 32, "the skinning shader declares joints[32]");
@@ -660,6 +664,10 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
         const float grip_world[3] = {hand.m[12], hand.m[13] - 0.3f * (1.0f - weapon.raise()), hand.m[14]};
         const float forward[3] = {root.m[8], 0.0f, root.m[10]};
         rifle_model = gameplay::makeHeldWeaponTransform(grip_world, forward, kRifleGripLocal);
+        // Turn the rifle half a turn about the grip, so the muzzle leads.
+        const Mat4 about_grip = math::multiply(math::translation(kRifleGripLocal[0], kRifleGripLocal[1], kRifleGripLocal[2]),
+            math::multiply(math::rotationY(kPi), math::translation(-kRifleGripLocal[0], -kRifleGripLocal[1], -kRifleGripLocal[2])));
+        rifle_model = math::multiply(rifle_model, about_grip);
         const Mat4& r = rifle_model;
         const float p[3] = {kRifleForegripLocal[0], kRifleForegripLocal[1], kRifleForegripLocal[2]};
         const float fore[3] = {r.m[0] * p[0] + r.m[4] * p[1] + r.m[8] * p[2] + r.m[12],
