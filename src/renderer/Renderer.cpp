@@ -141,6 +141,11 @@ std::string toonFragmentShaderSource() {
                 final_color *= mix(1.0, 1.0 - style.y, dot_mask);
             }
 
+            // Props are brightened by surface.y so dark metal and wood read against the body.
+            if (surface.x < 0.5) {
+                final_color *= 1.0 + surface.y;
+            }
+
             if (surface.x > 0.5) {
                 vec2 grid_coord = world_pos.xz;
                 vec2 grid_deriv = fwidth(grid_coord);
@@ -642,7 +647,8 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     const Mat4 view_projection = math::multiply(perspectiveFor(framebuffer_width, framebuffer_height, fov), view);
     impl_->last_view_projection = view_projection;
 
-    auto setToonSurface = [this](bool ground) {
+    // brighten lifts a prop's dark metal and wood out of the body's shadows.
+    auto setToonSurface = [this](bool ground, float brighten = 0.0f) {
         const float light[4] = {
             impl_->style.light_x,
             impl_->style.light_y,
@@ -655,7 +661,7 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
             impl_->style.halftone_scale,
             0.0f,
         };
-        const float surface[4] = {ground ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f};
+        const float surface[4] = {ground ? 1.0f : 0.0f, brighten, 0.0f, 0.0f};
         glUniform4fv(impl_->toon_light_dir_bands, 1, light);
         glUniform4fv(impl_->toon_style, 1, style);
         glUniform4fv(impl_->toon_surface, 1, surface);
@@ -805,7 +811,7 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
             }
             glUniformMatrix4fv(impl_->toon_mvp, 1, GL_FALSE, math::multiply(view_projection, prop_model).m);
             glUniformMatrix4fv(impl_->toon_model, 1, GL_FALSE, prop_model.m);
-            setToonSurface(false);
+            setToonSurface(false, 0.45f);
             glBindTexture(GL_TEXTURE_2D, rifle ? impl_->rifle_texture : impl_->pistol_texture);
             glBindVertexArray(prop.vao);
             glDrawElements(GL_TRIANGLES, prop.index_count, GL_UNSIGNED_SHORT, nullptr);
