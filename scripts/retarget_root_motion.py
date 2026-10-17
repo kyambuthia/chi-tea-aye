@@ -146,6 +146,13 @@ def main():
         ('WalkBackwards', 'walking_backwards.fbx', True),
         # One-shot: played once for a fist attack.
         ('PunchCombo', 'punch_combo.fbx', False),
+        # Weapon-held locomotion, from the Rifle 8-Way and Pistol packs.
+        ('RifleIdleAim', 'rifle_idle_aim.fbx', True),
+        ('RifleWalk', 'rifle_walk.fbx', True),
+        ('RifleRun', 'rifle_run.fbx', True),
+        ('PistolIdle', 'pistol_idle.fbx', True),
+        ('PistolWalk', 'pistol_walk.fbx', True),
+        ('PistolRun', 'pistol_run.fbx', True),
     ]
     actions, report = [], {'clips': {}}
     for title, filename, loop in clips:

@@ -603,6 +603,19 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     // A fist attack plays its punch over the locomotion, if the asset has the clip.
     const char* clip_name = gameplay.clipName();
     float clip_time = gameplay.clipTime();
+    // With a weapon in hand, locomotion uses the weapon-held clips when they exist.
+    const gameplay::WeaponSlot slot = gameplay.weapon().active();
+    if (slot == gameplay::WeaponSlot::Rifle || slot == gameplay::WeaponSlot::Pistol) {
+        const bool rifle = slot == gameplay::WeaponSlot::Rifle;
+        const std::string name = clip_name;
+        const char* held = nullptr;
+        if (name == "Idle") held = rifle ? "RifleIdleAim" : "PistolIdle";
+        else if (name == "Walk") held = rifle ? "RifleWalk" : "PistolWalk";
+        else if (name == "Run") held = rifle ? "RifleRun" : "PistolRun";
+        if (held != nullptr && impl_->character->hasClip(held)) {
+            clip_name = held;
+        }
+    }
     if (gameplay.weapon().attacking() && impl_->character->hasClip("PunchCombo")) {
         clip_name = "PunchCombo";
         clip_time = gameplay.weapon().attackProgress() * impl_->character->clipDuration("PunchCombo");
