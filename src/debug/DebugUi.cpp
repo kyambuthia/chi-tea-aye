@@ -202,7 +202,8 @@ void DebugUi::beginFrame() {
     ImGui::NewFrame();
 }
 
-void DebugUi::draw(const gameplay::GameState& gameplay, const app::InputState& input, renderer::StyleSettings& style, uint64_t frame_count, float delta_time) {
+void DebugUi::draw(const gameplay::GameState& gameplay, const app::InputState& input, renderer::StyleSettings& style, uint64_t frame_count, float delta_time,
+    float clip_time, float clip_duration) {
     const float fps = delta_time > 0.0f ? 1.0f / delta_time : 0.0f;
 
     char frame_text[32]{};
@@ -211,11 +212,16 @@ void DebugUi::draw(const gameplay::GameState& gameplay, const app::InputState& i
     char player_text[48]{};
     std::snprintf(frame_text, sizeof(frame_text), "%llu", static_cast<unsigned long long>(frame_count));
     std::snprintf(fps_text, sizeof(fps_text), "%.1f", fps);
-    std::snprintf(mouse_text, sizeof(mouse_text), "%.0f, %.0f", input.mouse.x, input.mouse.y);
+    // Polled every frame, so the readout follows the pointer even without mouse events.
+    float mouse_x = 0.0f;
+    float mouse_y = 0.0f;
+    SDL_GetMouseState(&mouse_x, &mouse_y);
+    std::snprintf(mouse_text, sizeof(mouse_text), "%.0f, %.0f", mouse_x, mouse_y);
     std::snprintf(player_text, sizeof(player_text), "%.2f, %.2f", gameplay.playerX(), gameplay.playerZ());
 
     ImGui::SetNextWindowPos(ImVec2(16.0f, 16.0f), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(310.0f, 420.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver);
     ImGui::Begin("Dev Panel");
 
     sectionHeader(PanelIcon::Activity, "Runtime");
@@ -239,7 +245,8 @@ void DebugUi::draw(const gameplay::GameState& gameplay, const app::InputState& i
     sectionHeader(PanelIcon::Box, "Player");
     drawStatRow("Position x,z", player_text);
     char clip_text[48]{};
-    std::snprintf(clip_text, sizeof(clip_text), "%s  %.2fs", gameplay.clipName(), gameplay.clipTime());
+    // Looping clips wrap, so show the time within the clip, not the time since it started.
+    std::snprintf(clip_text, sizeof(clip_text), "%s  %.2f / %.2fs", gameplay.clipName(), clip_time, clip_duration);
     drawStatRow("Clip", clip_text);
     ImGui::Checkbox("Show skeleton (F1)", &style.show_skeleton);
 

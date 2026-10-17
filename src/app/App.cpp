@@ -106,7 +106,8 @@ public:
         input_.tapped = app::KeyState{};
 
         debug_ui_.beginFrame();
-        debug_ui_.draw(gameplay_, input_, renderer_.styleSettings(), frame_count_, dt);
+        debug_ui_.draw(gameplay_, input_, renderer_.styleSettings(), frame_count_, dt,
+            renderer_.clipTime(), renderer_.clipDuration());
 
 #if defined(__EMSCRIPTEN__)
         // The page owns the canvas size on web; keep the window matched to it.

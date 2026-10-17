@@ -392,6 +392,8 @@ struct Renderer::Impl {
     GLint toon_joints = -1;
     GLint toon_light_dir_bands = -1;
     GLint toon_style = -1;
+    float clip_time = 0.0f;      // last frame: time within the clip, wrapped
+    float clip_duration = 0.0f;  // last frame: the clip length
     GLint toon_surface = -1;
 
     GLuint skeleton_program = 0;
@@ -629,6 +631,8 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
         clip_name = "RifleFire";
         clip_time = gameplay.weapon().fireProgress() * impl_->character->clipDuration("RifleFire");
     }
+    impl_->clip_duration = impl_->character->clipDuration(clip_name);
+    impl_->clip_time = impl_->clip_duration > 0.0f ? std::fmod(clip_time, impl_->clip_duration) : 0.0f;
     // A held rifle is placed from the right hand first, then the left arm reaches
     // its fore-end: two passes, because the left hand goal depends on the rifle.
     const gameplay::WeaponState& weapon = gameplay.weapon();
@@ -748,6 +752,14 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     }
 
     glBindVertexArray(0);
+}
+
+float Renderer::clipTime() const {
+    return impl_->clip_time;
+}
+
+float Renderer::clipDuration() const {
+    return impl_->clip_duration;
 }
 
 StyleSettings& Renderer::styleSettings() {

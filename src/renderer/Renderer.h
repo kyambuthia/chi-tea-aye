@@ -34,6 +34,9 @@ public:
         const assets::StaticMesh& pistol);
     void draw(const gameplay::GameState& gameplay, int framebuffer_width, int framebuffer_height);
     StyleSettings& styleSettings();
+    // The clip the last frame played: its time within the clip (wrapped for loops) and its length.
+    float clipTime() const;
+    float clipDuration() const;
     void cleanup();
 
 private:
