@@ -23,7 +23,7 @@ struct StyleSettings {
     float light_z = 0.35f;
     float toon_bands = 4.0f;
     bool halftone_enabled = true;
-    float halftone_intensity = 0.22f;
+    float halftone_intensity = 0.12f;
     float halftone_scale = 9.0f;
 };
 

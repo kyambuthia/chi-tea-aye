@@ -101,14 +101,14 @@ private:
     float camera_goal_azimuth_ = 3.14159265358979323846f;
     float idle_orbit_time_ = 0.0f;
     bool auto_recenter_ = true;
-    float pitch_target_ = 0.3f;
+    float pitch_target_ = 0.18f;  // looks slightly down, so centre shots clear the low wall
     float distance_target_ = 3.2f;
 
     // Smoothed camera state that follows the targets above, with the spring
     // velocities that smoothing carries from frame to frame.
     float camera_azimuth_ = 3.14159265358979323846f;
     float camera_azimuth_speed_ = 0.0f;
-    float camera_pitch_ = 0.3f;
+    float camera_pitch_ = 0.18f;
     float camera_distance_ = 3.2f;
     float camera_target_x_ = 0.0f;
     float camera_target_z_ = 0.0f;

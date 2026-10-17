@@ -37,8 +37,11 @@ const math::Mat4 kRifleGrip = math::identity();
 // about the grip so the muzzle faces forward. The grip sits just behind the
 // receiver (toward the stock, +Z) and the fore-end just ahead of it (toward the
 // muzzle, -Z). Tuned by eye from a side view.
-const float kRifleGripLocal[3] = {0.0f, -0.05f, 0.05f};
+const float kRifleGripLocal[3] = {0.0f, -0.05f, 0.12f};
 const float kRifleForegripLocal[3] = {0.0f, -0.03f, -0.2f};
+// The spine leans toward the aim: this many radians per radian of camera pitch, up to a limit.
+constexpr float kSpineBendPerPitch = 0.8f;
+constexpr float kSpineBendLimit = 0.5f;
 const math::Mat4 kPistolGrip = math::identity();
 
 static_assert(kJoints == 32, "the skinning shader declares joints[32]");
@@ -466,6 +469,7 @@ struct Renderer::Impl {
     GLuint rifle_texture = 0;
     GLuint pistol_texture = 0;
     int hand_joint = -1;
+    int left_hand_joint = -1;
 
     const assets::CharacterModel* character = nullptr;
     const world::World* world = nullptr;
@@ -520,6 +524,7 @@ void Renderer::init(const assets::CharacterModel& character, const world::World&
     impl_ = new Impl{};
     impl_->character = &character;
     impl_->hand_joint = character.jointIndex("RightHand");
+    impl_->left_hand_joint = character.jointIndex("LeftHand");
 
     const uint8_t white_px[4] = {255, 255, 255, 255};
     if (!rifle.vertices.empty()) {
@@ -701,38 +706,69 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
         clip_name = "PunchCombo";
         clip_time = gameplay.weapon().attackProgress() * impl_->character->clipDuration("PunchCombo");
     }
-    // A shot plays its fire clip over the rifle's locomotion, if the asset has it.
-    if (gameplay.weapon().firing() && impl_->character->hasClip("RifleFire")) {
-        clip_name = "RifleFire";
-        clip_time = gameplay.weapon().fireProgress() * impl_->character->clipDuration("RifleFire");
-    }
     impl_->played_clip = clip_name;
     impl_->clip_duration = impl_->character->clipDuration(clip_name);
     impl_->clip_time = impl_->clip_duration > 0.0f ? std::fmod(clip_time, impl_->clip_duration) : 0.0f;
-    // A held rifle is placed from the right hand first, then the left arm reaches
-    // its fore-end: two passes, because the left hand goal depends on the rifle.
+
+    // The pose: the locomotion clip below the spine, with the rifle's fire clip as an
+    // upper-body layer while shooting, and the spine leaning toward the aim.
     const gameplay::WeaponState& weapon = gameplay.weapon();
-    const bool rifle_held = impl_->hand_joint >= 0 && weapon.active() == gameplay::WeaponSlot::Rifle &&
+    const bool rifle_ready = weapon.active() == gameplay::WeaponSlot::Rifle;
+    assets::CharacterModel::PoseRequest request;
+    request.clip = clip_name;
+    request.time = clip_time;
+    if (rifle_ready && weapon.firing() && impl_->character->hasClip("RifleFire")) {
+        request.upper_clip = "RifleFire";
+        request.upper_time = weapon.fireProgress() * impl_->character->clipDuration("RifleFire");
+    }
+    // The aim weight: 1 while firing, and the aim amount while aimed down the scope.
+    const float aim_weight = rifle_ready ? (weapon.firing() ? 1.0f : weapon.aim()) : 0.0f;
+    const float lean = std::fmax(-kSpineBendLimit, std::fmin(kSpineBendLimit, kSpineBendPerPitch * gameplay.cameraPitch()));
+    request.spine_bend = aim_weight * lean;
+
+    // A held rifle is placed by the hands, then the left arm reaches the fore-end.
+    // Two passes: the left hand's goal depends on where the rifle is.
+    const bool rifle_held = impl_->hand_joint >= 0 && impl_->left_hand_joint >= 0 && rifle_ready &&
         impl_->rifle_mesh.index_count > 0;
-    impl_->character->evaluatePose(clip_name, clip_time, root, impl_->ground_height, impl_->joint_matrices);
     impl_->muzzle_valid = false;
     Mat4 rifle_model = math::identity();
+    impl_->character->evaluatePose(request, root, impl_->ground_height, impl_->joint_matrices);
     if (rifle_held) {
         const Mat4 hand = math::multiply(impl_->joint_matrices[impl_->hand_joint],
             impl_->character->jointBindWorld(impl_->hand_joint));
+        const Mat4 left = math::multiply(impl_->joint_matrices[impl_->left_hand_joint],
+            impl_->character->jointBindWorld(impl_->left_hand_joint));
         const float grip_world[3] = {hand.m[12], hand.m[13] - 0.3f * (1.0f - weapon.raise()), hand.m[14]};
-        const float forward[3] = {root.m[8], 0.0f, root.m[10]};
-        rifle_model = gameplay::makeHeldWeaponTransform(grip_world, forward, kRifleGripLocal);
-        // Turn the rifle half a turn about the grip, so the muzzle leads.
-        const Mat4 about_grip = math::multiply(math::translation(kRifleGripLocal[0], kRifleGripLocal[1], kRifleGripLocal[2]),
-            math::multiply(math::rotationY(kPi), math::translation(-kRifleGripLocal[0], -kRifleGripLocal[1], -kRifleGripLocal[2])));
-        rifle_model = math::multiply(rifle_model, about_grip);
+
+        // Direction: from the grip toward the fore-end the hands hold, blended into the
+        // camera's aim line as the rifle is raised and fired. Shots go where the rifle points.
+        float hand_dir[3] = {left.m[12] - hand.m[12], left.m[13] - hand.m[13], left.m[14] - hand.m[14]};
+        const float hand_len = std::sqrt(hand_dir[0] * hand_dir[0] + hand_dir[1] * hand_dir[1] + hand_dir[2] * hand_dir[2]);
+        if (hand_len > 1e-4f) {
+            for (float& c : hand_dir) c /= hand_len;
+        } else {
+            hand_dir[0] = 0.0f; hand_dir[1] = 0.0f; hand_dir[2] = 1.0f;
+        }
+        const gameplay::Ray aim = gameplay.cameraRay();
+        float dir[3];
+        float dir_len = 0.0f;
+        for (int c = 0; c < 3; ++c) {
+            dir[c] = (1.0f - aim_weight) * hand_dir[c] + aim_weight * aim.direction[c];
+            dir_len += dir[c] * dir[c];
+        }
+        dir_len = std::sqrt(dir_len);
+        for (float& c : dir) c /= dir_len;
+        rifle_model = gameplay::makeAimedWeaponTransform(grip_world, dir, kRifleGripLocal);
+
+        // Second pass: the left hand reaches the fore-end, on the rifle.
         const Mat4& r = rifle_model;
         const float p[3] = {kRifleForegripLocal[0], kRifleForegripLocal[1], kRifleForegripLocal[2]};
         const float fore[3] = {r.m[0] * p[0] + r.m[4] * p[1] + r.m[8] * p[2] + r.m[12],
             r.m[1] * p[0] + r.m[5] * p[1] + r.m[9] * p[2] + r.m[13],
             r.m[2] * p[0] + r.m[6] * p[1] + r.m[10] * p[2] + r.m[14]};
-        impl_->character->evaluatePose(clip_name, clip_time, root, impl_->ground_height, impl_->joint_matrices, fore);
+        request.left_hand_goal = fore;
+        impl_->character->evaluatePose(request, root, impl_->ground_height, impl_->joint_matrices);
+
         // The muzzle is the rifle's -Z end, half its 0.95 m length from the centre.
         const float tip[3] = {0.0f, 0.0f, -0.475f};
         const float* m = rifle_model.m;
