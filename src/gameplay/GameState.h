@@ -43,23 +43,29 @@ private:
 
     float player_x_ = 0.0f;
     float player_z_ = 0.0f;
+    float velocity_x_ = 0.0f;
+    float velocity_z_ = 0.0f;
     float yaw_ = 0.0f;
     float clip_time_ = 0.0f;
     Clip clip_ = Clip::Idle;
 
-    // Player-controlled orbit: an offset from behind the player, and the
-    // seconds since the player last orbited.
-    float orbit_yaw_ = 0.0f;
+    // The camera's goal azimuth. Orbit input moves it directly; it recenters
+    // behind the player only slowly, and only when the player is idle.
+    float camera_goal_azimuth_ = 3.14159265358979323846f;
     float idle_orbit_time_ = 0.0f;
     float pitch_target_ = 0.3f;
     float distance_target_ = 3.2f;
 
-    // Smoothed camera state that follows the targets above.
+    // Smoothed camera state that follows the targets above, with the spring
+    // velocities that smoothing carries from frame to frame.
     float camera_azimuth_ = 3.14159265358979323846f;
+    float camera_azimuth_speed_ = 0.0f;
     float camera_pitch_ = 0.3f;
     float camera_distance_ = 3.2f;
     float camera_target_x_ = 0.0f;
     float camera_target_z_ = 0.0f;
+    float camera_target_x_speed_ = 0.0f;
+    float camera_target_z_speed_ = 0.0f;
 };
 
 } // namespace gameplay
