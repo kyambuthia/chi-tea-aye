@@ -1,14 +1,12 @@
 #include "debug/DebugUi.h"
 
 #include "app/InputState.h"
-#include "app/SokolLog.h"
 #include "gameplay/GameState.h"
 #include "renderer/Renderer.h"
 
 #include "imgui.h"
-#include "sokol_app.h"
-#include "sokol_gfx.h"
-#include "sokol_imgui.h"
+#include "imgui_impl_opengl3.h"
+#include "imgui_impl_sdl3.h"
 
 #include <cstdio>
 
@@ -190,20 +188,18 @@ void drawStatRow(const char* label, const char* value) {
 
 } // namespace
 
-void DebugUi::init() {
-    simgui_desc_t desc{};
-    desc.logger.func = app::sokolLog;
-    simgui_setup(&desc);
+void DebugUi::init(SDL_Window* window, SDL_GLContext context, const char* glsl_version) {
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGui_ImplSDL3_InitForOpenGL(window, context);
+    ImGui_ImplOpenGL3_Init(glsl_version);
     applyShadcnLikeTheme();
 }
 
-void DebugUi::beginFrame(int width, int height, float delta_time, float dpi_scale) {
-    simgui_frame_desc_t desc{};
-    desc.width = width;
-    desc.height = height;
-    desc.delta_time = delta_time;
-    desc.dpi_scale = dpi_scale;
-    simgui_new_frame(&desc);
+void DebugUi::beginFrame() {
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplSDL3_NewFrame();
+    ImGui::NewFrame();
 }
 
 void DebugUi::draw(const gameplay::GameState& gameplay, const app::InputState& input, renderer::StyleSettings& style, uint64_t frame_count, float delta_time) {
@@ -257,15 +253,18 @@ void DebugUi::draw(const gameplay::GameState& gameplay, const app::InputState& i
 }
 
 void DebugUi::render() {
-    simgui_render();
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
-bool DebugUi::handleEvent(const sapp_event* event) {
-    return simgui_handle_event(event);
+bool DebugUi::handleEvent(const SDL_Event* event) {
+    return ImGui_ImplSDL3_ProcessEvent(event);
 }
 
 void DebugUi::cleanup() {
-    simgui_shutdown();
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplSDL3_Shutdown();
+    ImGui::DestroyContext();
 }
 
 } // namespace debug

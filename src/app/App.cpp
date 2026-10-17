@@ -1,85 +1,192 @@
 #include "app/App.h"
 
 #include "app/InputState.h"
-#include "app/SokolLog.h"
 #include "assets/AssetSystem.h"
 #include "debug/DebugUi.h"
 #include "gameplay/GameState.h"
 #include "physics/Physics.h"
+#include "renderer/GlFunctions.h"
 #include "renderer/Renderer.h"
 #include "world/World.h"
 
-#include "sokol_app.h"
+#include <SDL3/SDL.h>
 
-#include <cstdio>
-#include <cstdlib>
+#if defined(__EMSCRIPTEN__)
+#include <emscripten/html5.h>
+#endif
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <memory>
 
 namespace app {
 namespace {
 
+#if defined(CHI_GLES)
+constexpr const char* kGlslVersion = "#version 300 es";
+#else
+constexpr const char* kGlslVersion = "#version 330";
+#endif
+
+// Touch stick: the left half of the screen acts as a virtual joystick.
+constexpr float kStickDeadzone = 0.25f;
+constexpr float kStickRadiusFraction = 0.12f;
+
 class App {
 public:
-    void init() {
+    SDL_AppResult init() {
+        SDL_SetAppMetadata("chi-tea-aye", "0.1", "dev.chi-tea-aye.prototype");
+
+        if (!SDL_Init(SDL_INIT_VIDEO)) {
+            SDL_Log("SDL_Init failed: %s", SDL_GetError());
+            return SDL_APP_FAILURE;
+        }
+
+#if defined(CHI_GLES)
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+#else
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+#endif
+        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+
+        window_ = SDL_CreateWindow("chi-tea-aye prototype", 1280, 720,
+            SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+        if (window_ == nullptr) {
+            SDL_Log("SDL_CreateWindow failed: %s", SDL_GetError());
+            return SDL_APP_FAILURE;
+        }
+
+        gl_context_ = SDL_GL_CreateContext(window_);
+        if (gl_context_ == nullptr) {
+            SDL_Log("SDL_GL_CreateContext failed: %s", SDL_GetError());
+            return SDL_APP_FAILURE;
+        }
+        SDL_GL_MakeCurrent(window_, gl_context_);
+        SDL_GL_SetSwapInterval(1);
+
+        if (!loadGlFunctions()) {
+            SDL_Log("failed to load OpenGL functions");
+            return SDL_APP_FAILURE;
+        }
+
         assets_.init();
         world_.init();
         physics_.init();
         gameplay_.init();
         renderer_.init();
-        debug_ui_.init();
+        debug_ui_.init(window_, gl_context_, kGlslVersion);
+
+        last_ticks_ns_ = SDL_GetTicksNS();
+        return SDL_APP_CONTINUE;
     }
 
-    void frame() {
-        const auto dt = static_cast<float>(sapp_frame_duration());
+    SDL_AppResult iterate() {
+        const uint64_t now_ns = SDL_GetTicksNS();
+        // Clamp so a stall (window drag, backgrounding) does not teleport the player.
+        const float dt = std::min(static_cast<float>(now_ns - last_ticks_ns_) / 1e9f, 0.1f);
+        last_ticks_ns_ = now_ns;
 
         ++frame_count_;
         gameplay_.update(input_, physics_, world_, dt);
 
-        debug_ui_.beginFrame(sapp_width(), sapp_height(), dt, sapp_dpi_scale());
+        debug_ui_.beginFrame();
         debug_ui_.draw(gameplay_, input_, renderer_.styleSettings(), frame_count_, dt);
 
-        renderer_.draw(gameplay_, debug_ui_);
+#if defined(__EMSCRIPTEN__)
+        // The page owns the canvas size on web; keep the window matched to it.
+        double css_w = 0.0;
+        double css_h = 0.0;
+        if (emscripten_get_element_css_size("#canvas", &css_w, &css_h) == EMSCRIPTEN_RESULT_SUCCESS) {
+            int win_w = 0;
+            int win_h = 0;
+            SDL_GetWindowSize(window_, &win_w, &win_h);
+            if (win_w != static_cast<int>(css_w) || win_h != static_cast<int>(css_h)) {
+                SDL_SetWindowSize(window_, static_cast<int>(css_w), static_cast<int>(css_h));
+            }
+        }
+#endif
+
+        int fb_width = 0;
+        int fb_height = 0;
+        SDL_GetWindowSizeInPixels(window_, &fb_width, &fb_height);
+        renderer_.draw(gameplay_, fb_width, fb_height);
+        debug_ui_.render();
+
+        SDL_GL_SwapWindow(window_);
+        return SDL_APP_CONTINUE;
     }
 
-    void cleanup() {
+    SDL_AppResult event(const SDL_Event* e) {
+        (void)debug_ui_.handleEvent(e);
+
+        switch (e->type) {
+            case SDL_EVENT_QUIT:
+                return SDL_APP_SUCCESS;
+            case SDL_EVENT_KEY_DOWN:
+            case SDL_EVENT_KEY_UP:
+                if (e->key.scancode == SDL_SCANCODE_ESCAPE && e->type == SDL_EVENT_KEY_DOWN) {
+                    return SDL_APP_SUCCESS;
+                }
+                setKey(e->key.scancode, e->type == SDL_EVENT_KEY_DOWN);
+                break;
+            case SDL_EVENT_MOUSE_MOTION:
+                input_.mouse.x = e->motion.x;
+                input_.mouse.y = e->motion.y;
+                break;
+            case SDL_EVENT_FINGER_DOWN:
+                onFingerDown(e->tfinger);
+                break;
+            case SDL_EVENT_FINGER_MOTION:
+                onFingerMotion(e->tfinger);
+                break;
+            case SDL_EVENT_FINGER_UP:
+            case SDL_EVENT_FINGER_CANCELED:
+                onFingerUp(e->tfinger);
+                break;
+            default:
+                break;
+        }
+        return SDL_APP_CONTINUE;
+    }
+
+    void quit() {
+        if (window_ == nullptr) {
+            return;
+        }
+        SDL_GL_MakeCurrent(window_, gl_context_);
         debug_ui_.cleanup();
         renderer_.cleanup();
         gameplay_.cleanup();
         physics_.cleanup();
         world_.cleanup();
         assets_.cleanup();
-    }
 
-    void event(const sapp_event* event) {
-        (void)debug_ui_.handleEvent(event);
-
-        switch (event->type) {
-            case SAPP_EVENTTYPE_MOUSE_MOVE:
-                input_.mouse.x = event->mouse_x;
-                input_.mouse.y = event->mouse_y;
-                break;
-            case SAPP_EVENTTYPE_KEY_DOWN:
-            case SAPP_EVENTTYPE_KEY_UP:
-                setKey(event->key_code, event->type == SAPP_EVENTTYPE_KEY_DOWN);
-                break;
-            default:
-                break;
-        }
+        SDL_GL_DestroyContext(gl_context_);
+        SDL_DestroyWindow(window_);
+        window_ = nullptr;
+        gl_context_ = nullptr;
+        SDL_Quit();
     }
 
 private:
-    void setKey(sapp_keycode key, bool down) {
+    void setKey(SDL_Scancode key, bool down) {
         switch (key) {
-            case SAPP_KEYCODE_W:
+            case SDL_SCANCODE_W:
                 input_.keys.w = down;
                 break;
-            case SAPP_KEYCODE_A:
+            case SDL_SCANCODE_A:
                 input_.keys.a = down;
                 break;
-            case SAPP_KEYCODE_S:
+            case SDL_SCANCODE_S:
                 input_.keys.s = down;
                 break;
-            case SAPP_KEYCODE_D:
+            case SDL_SCANCODE_D:
                 input_.keys.d = down;
                 break;
             default:
@@ -87,6 +194,58 @@ private:
         }
     }
 
+    // Finger coordinates are normalized to the window, so convert them to points.
+    void fingerPoint(const SDL_TouchFingerEvent& f, float& x, float& y) const {
+        int w = 1;
+        int h = 1;
+        SDL_GetWindowSize(window_, &w, &h);
+        x = f.x * static_cast<float>(w);
+        y = f.y * static_cast<float>(h);
+    }
+
+    void onFingerDown(const SDL_TouchFingerEvent& f) {
+        if (stick_active_ || f.x >= 0.5f) {
+            return;
+        }
+        stick_active_ = true;
+        stick_finger_ = f.fingerID;
+        fingerPoint(f, stick_origin_x_, stick_origin_y_);
+    }
+
+    void onFingerMotion(const SDL_TouchFingerEvent& f) {
+        if (!stick_active_ || f.fingerID != stick_finger_) {
+            return;
+        }
+        int w = 1;
+        int h = 1;
+        SDL_GetWindowSize(window_, &w, &h);
+        const float radius = kStickRadiusFraction * static_cast<float>(std::min(w, h));
+        float x = 0.0f;
+        float y = 0.0f;
+        fingerPoint(f, x, y);
+        const float dx = (x - stick_origin_x_) / radius;
+        const float dy = (y - stick_origin_y_) / radius;
+
+        // Screen y grows downward, so pushing the stick up is negative dy.
+        input_.keys.a = dx < -kStickDeadzone;
+        input_.keys.d = dx > kStickDeadzone;
+        input_.keys.w = dy < -kStickDeadzone;
+        input_.keys.s = dy > kStickDeadzone;
+    }
+
+    void onFingerUp(const SDL_TouchFingerEvent& f) {
+        if (!stick_active_ || f.fingerID != stick_finger_) {
+            return;
+        }
+        stick_active_ = false;
+        input_.keys.a = false;
+        input_.keys.d = false;
+        input_.keys.w = false;
+        input_.keys.s = false;
+    }
+
+    SDL_Window* window_ = nullptr;
+    SDL_GLContext gl_context_ = nullptr;
     InputState input_;
     assets::AssetSystem assets_;
     world::World world_;
@@ -95,67 +254,35 @@ private:
     renderer::Renderer renderer_;
     debug::DebugUi debug_ui_;
     uint64_t frame_count_ = 0;
+    uint64_t last_ticks_ns_ = 0;
+    bool stick_active_ = false;
+    SDL_FingerID stick_finger_ = 0;
+    float stick_origin_x_ = 0.0f;
+    float stick_origin_y_ = 0.0f;
 };
 
 std::unique_ptr<App> g_app;
 
 } // namespace
 
-void sokolLog(const char* tag, uint32_t log_level, uint32_t log_item_id, const char* message, uint32_t line, const char* filename, void* user_data) {
-    (void)user_data;
-
-    std::fprintf(stderr, "[%s] level=%u item=%u %s:%u: %s\n",
-        tag ? tag : "sokol",
-        log_level,
-        log_item_id,
-        filename ? filename : "<unknown>",
-        line,
-        message ? message : "<no message>");
-
-    if (log_level == 0) {
-        std::abort();
-    }
-}
-
-namespace {
-
-void initCallback() {
+SDL_AppResult init() {
     g_app = std::make_unique<App>();
-    g_app->init();
+    return g_app->init();
 }
 
-void frameCallback() {
-    g_app->frame();
+SDL_AppResult iterate() {
+    return g_app->iterate();
 }
 
-void cleanupCallback() {
-    g_app->cleanup();
-    g_app.reset();
+SDL_AppResult event(const SDL_Event* event) {
+    return g_app->event(event);
 }
 
-void eventCallback(const sapp_event* event) {
-    g_app->event(event);
-}
-
-} // namespace
-
-sapp_desc makeAppDesc(int argc, char* argv[]) {
-    (void)argc;
-    (void)argv;
-
-    sapp_desc desc{};
-    desc.init_cb = initCallback;
-    desc.frame_cb = frameCallback;
-    desc.cleanup_cb = cleanupCallback;
-    desc.event_cb = eventCallback;
-    desc.width = 1280;
-    desc.height = 720;
-    desc.window_title = "chi-tea-aye prototype";
-    desc.icon.sokol_default = true;
-    desc.gl.major_version = 3;
-    desc.gl.minor_version = 3;
-    desc.logger.func = sokolLog;
-    return desc;
+void quit() {
+    if (g_app) {
+        g_app->quit();
+        g_app.reset();
+    }
 }
 
 } // namespace app

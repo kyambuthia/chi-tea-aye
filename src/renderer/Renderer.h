@@ -24,8 +24,9 @@ struct StyleSettings {
 
 class Renderer {
 public:
+    // Requires a current GL context.
     void init();
-    void draw(const gameplay::GameState& gameplay, debug::DebugUi& debug_ui);
+    void draw(const gameplay::GameState& gameplay, int framebuffer_width, int framebuffer_height);
     StyleSettings& styleSettings();
     void cleanup();
 

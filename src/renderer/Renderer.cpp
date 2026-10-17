@@ -1,15 +1,12 @@
 #include "renderer/Renderer.h"
 
-#include "app/SokolLog.h"
-#include "debug/DebugUi.h"
 #include "gameplay/GameState.h"
-
-#include "sokol_gfx.h"
-#include "sokol_glue.h"
+#include "renderer/GlApi.h"
 
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <new>
 
 namespace renderer {
@@ -25,17 +22,27 @@ struct Mat4 {
     float m[16];
 };
 
-struct ToonUniforms {
+// Uniform blocks are split per stage: sokol requires each stage to declare
+// the blocks it reads (Metal in particular), so fragment inputs get their own
+// block at slot 1.
+struct ToonVsUniforms {
     Mat4 mvp;
     Mat4 model;
+};
+
+struct ToonFsUniforms {
     float light_dir_bands[4];
     float style[4];
     float surface[4];
 };
 
-struct OutlineUniforms {
+struct OutlineVsUniforms {
     Mat4 mvp;
-    float outline_color_thickness[4];
+    float outline_thickness[4];
+};
+
+struct OutlineFsUniforms {
+    float outline_color[4];
 };
 
 constexpr Vertex kVertices[] = {
@@ -157,9 +164,14 @@ Mat4 lookAt(float eye_x, float eye_y, float eye_z, float target_x, float target_
     return out;
 }
 
-const char* vertexShaderSource() {
-    return R"(
-        #version 330
+#if defined(CHI_GLES)
+#define CHI_GLSL_HEADER "#version 300 es\nprecision highp float;\n"
+#else
+#define CHI_GLSL_HEADER "#version 330\n"
+#endif
+
+const char* toonVertexShaderSource() {
+    return CHI_GLSL_HEADER R"(
         uniform mat4 mvp;
         uniform mat4 model;
 
@@ -182,9 +194,8 @@ const char* vertexShaderSource() {
     )";
 }
 
-const char* fragmentShaderSource() {
-    return R"(
-        #version 330
+const char* toonFragmentShaderSource() {
+    return CHI_GLSL_HEADER R"(
         uniform vec4 light_dir_bands;
         uniform vec4 style;
         uniform vec4 surface;
@@ -239,37 +250,40 @@ const char* fragmentShaderSource() {
 }
 
 const char* outlineVertexShaderSource() {
-    return R"(
-        #version 330
+    return CHI_GLSL_HEADER R"(
         uniform mat4 mvp;
-        uniform vec4 outline_color_thickness;
+        uniform vec4 outline_thickness;
 
         in vec3 position;
         in vec3 normal0;
 
         void main() {
-            vec3 expanded = position + normal0 * outline_color_thickness.w;
+            vec3 expanded = position + normal0 * outline_thickness.w;
             gl_Position = mvp * vec4(expanded, 1.0);
         }
     )";
 }
 
 const char* outlineFragmentShaderSource() {
-    return R"(
-        #version 330
-        uniform vec4 outline_color_thickness;
+    return CHI_GLSL_HEADER R"(
+        uniform vec4 outline_color;
         out vec4 frag_color;
 
         void main() {
-            frag_color = vec4(outline_color_thickness.rgb, 1.0);
+            frag_color = vec4(outline_color.rgb, 1.0);
         }
     )";
 }
 
-ToonUniforms makeToonUniforms(const Mat4& view_projection, const Mat4& model, const StyleSettings& style, bool ground) {
-    ToonUniforms uniforms{};
+ToonVsUniforms makeToonVsUniforms(const Mat4& view_projection, const Mat4& model) {
+    ToonVsUniforms uniforms{};
     uniforms.mvp = multiply(view_projection, model);
     uniforms.model = model;
+    return uniforms;
+}
+
+ToonFsUniforms makeToonFsUniforms(const StyleSettings& style, bool ground) {
+    ToonFsUniforms uniforms{};
     uniforms.light_dir_bands[0] = style.light_x;
     uniforms.light_dir_bands[1] = style.light_y;
     uniforms.light_dir_bands[2] = style.light_z;
@@ -285,42 +299,101 @@ ToonUniforms makeToonUniforms(const Mat4& view_projection, const Mat4& model, co
     return uniforms;
 }
 
-OutlineUniforms makeOutlineUniforms(const Mat4& view_projection, const Mat4& model, const StyleSettings& style) {
-    OutlineUniforms uniforms{};
+OutlineVsUniforms makeOutlineVsUniforms(const Mat4& view_projection, const Mat4& model, const StyleSettings& style) {
+    OutlineVsUniforms uniforms{};
     uniforms.mvp = multiply(view_projection, model);
-    uniforms.outline_color_thickness[0] = style.outline_color[0];
-    uniforms.outline_color_thickness[1] = style.outline_color[1];
-    uniforms.outline_color_thickness[2] = style.outline_color[2];
-    uniforms.outline_color_thickness[3] = style.outline_thickness;
+    uniforms.outline_thickness[3] = style.outline_thickness;
     return uniforms;
+}
+
+OutlineFsUniforms makeOutlineFsUniforms(const StyleSettings& style) {
+    OutlineFsUniforms uniforms{};
+    uniforms.outline_color[0] = style.outline_color[0];
+    uniforms.outline_color[1] = style.outline_color[1];
+    uniforms.outline_color[2] = style.outline_color[2];
+    uniforms.outline_color[3] = 1.0f;
+    return uniforms;
+}
+
+// Compiles and links a program. Attribute locations are fixed so one VAO
+// layout serves both the toon and outline programs.
+GLuint buildProgram(const char* vertex_source, const char* fragment_source, const char* label) {
+    auto compile = [label](GLenum type, const char* source) {
+        const GLuint shader = glCreateShader(type);
+        glShaderSource(shader, 1, &source, nullptr);
+        glCompileShader(shader);
+        GLint ok = 0;
+        glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
+        if (ok == 0) {
+            char log[1024]{};
+            glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
+            std::fprintf(stderr, "[renderer] %s shader compile failed: %s\n", label, log);
+            glDeleteShader(shader);
+            return GLuint{0};
+        }
+        return shader;
+    };
+
+    const GLuint vs = compile(GL_VERTEX_SHADER, vertex_source);
+    const GLuint fs = compile(GL_FRAGMENT_SHADER, fragment_source);
+    if (vs == 0 || fs == 0) {
+        return 0;
+    }
+
+    const GLuint program = glCreateProgram();
+    glAttachShader(program, vs);
+    glAttachShader(program, fs);
+    glBindAttribLocation(program, 0, "position");
+    glBindAttribLocation(program, 1, "normal0");
+    glBindAttribLocation(program, 2, "color0");
+    glLinkProgram(program);
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+
+    GLint ok = 0;
+    glGetProgramiv(program, GL_LINK_STATUS, &ok);
+    if (ok == 0) {
+        char log[1024]{};
+        glGetProgramInfoLog(program, sizeof(log), nullptr, log);
+        std::fprintf(stderr, "[renderer] %s program link failed: %s\n", label, log);
+        return 0;
+    }
+    return program;
 }
 
 } // namespace
 
 struct Renderer::Impl {
-    sg_buffer vertex_buffer{};
-    sg_buffer index_buffer{};
-    sg_pipeline toon_pipeline{};
-    sg_pipeline outline_pipeline{};
-    sg_bindings bindings{};
-    sg_pass_action pass_action{};
+    GLuint vao = 0;
+    GLuint vertex_buffer = 0;
+    GLuint index_buffer = 0;
+
+    GLuint toon_program = 0;
+    GLint toon_mvp = -1;
+    GLint toon_model = -1;
+    GLint toon_light_dir_bands = -1;
+    GLint toon_style = -1;
+    GLint toon_surface = -1;
+
+    GLuint outline_program = 0;
+    GLint outline_mvp = -1;
+    GLint outline_thickness = -1;
+    GLint outline_color = -1;
+
     StyleSettings style{};
 };
 
 void Renderer::init() {
     impl_ = new Impl{};
 
-    sg_desc desc{};
-    desc.environment = sglue_environment();
-    desc.logger.func = app::sokolLog;
-    sg_setup(&desc);
+    glGenVertexArrays(1, &impl_->vao);
+    glBindVertexArray(impl_->vao);
 
-    sg_buffer_desc buffer_desc{};
-    buffer_desc.data.ptr = kVertices;
-    buffer_desc.data.size = sizeof(kVertices);
-    buffer_desc.label = "scene-vertices";
-    impl_->vertex_buffer = sg_make_buffer(&buffer_desc);
+    glGenBuffers(1, &impl_->vertex_buffer);
+    glBindBuffer(GL_ARRAY_BUFFER, impl_->vertex_buffer);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(kVertices), kVertices, GL_STATIC_DRAW);
 
+    // Cube indices first (36), then the ground quad (6).
     uint16_t indices[42]{};
     for (size_t i = 0; i < 36; ++i) {
         indices[i] = kCubeIndices[i];
@@ -328,133 +401,95 @@ void Renderer::init() {
     for (size_t i = 0; i < 6; ++i) {
         indices[36 + i] = kGroundIndices[i];
     }
+    glGenBuffers(1, &impl_->index_buffer);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, impl_->index_buffer);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
 
-    sg_buffer_desc index_desc{};
-    index_desc.usage.vertex_buffer = false;
-    index_desc.usage.index_buffer = true;
-    index_desc.usage.immutable = true;
-    index_desc.data.ptr = indices;
-    index_desc.data.size = sizeof(indices);
-    index_desc.label = "scene-indices";
-    impl_->index_buffer = sg_make_buffer(&index_desc);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<const void*>(offsetof(Vertex, position)));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<const void*>(offsetof(Vertex, normal)));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<const void*>(offsetof(Vertex, color)));
 
-    sg_shader_desc shader_desc{};
-    shader_desc.vertex_func.source = vertexShaderSource();
-    shader_desc.fragment_func.source = fragmentShaderSource();
-    shader_desc.attrs[0].glsl_name = "position";
-    shader_desc.attrs[1].glsl_name = "normal0";
-    shader_desc.attrs[2].glsl_name = "color0";
-    shader_desc.uniform_blocks[0].stage = SG_SHADERSTAGE_VERTEX;
-    shader_desc.uniform_blocks[0].size = sizeof(ToonUniforms);
-    shader_desc.uniform_blocks[0].layout = SG_UNIFORMLAYOUT_STD140;
-    shader_desc.uniform_blocks[0].glsl_uniforms[0].glsl_name = "mvp";
-    shader_desc.uniform_blocks[0].glsl_uniforms[0].type = SG_UNIFORMTYPE_MAT4;
-    shader_desc.uniform_blocks[0].glsl_uniforms[0].array_count = 1;
-    shader_desc.uniform_blocks[0].glsl_uniforms[1].glsl_name = "model";
-    shader_desc.uniform_blocks[0].glsl_uniforms[1].type = SG_UNIFORMTYPE_MAT4;
-    shader_desc.uniform_blocks[0].glsl_uniforms[1].array_count = 1;
-    shader_desc.uniform_blocks[0].glsl_uniforms[2].glsl_name = "light_dir_bands";
-    shader_desc.uniform_blocks[0].glsl_uniforms[2].type = SG_UNIFORMTYPE_FLOAT4;
-    shader_desc.uniform_blocks[0].glsl_uniforms[2].array_count = 1;
-    shader_desc.uniform_blocks[0].glsl_uniforms[3].glsl_name = "style";
-    shader_desc.uniform_blocks[0].glsl_uniforms[3].type = SG_UNIFORMTYPE_FLOAT4;
-    shader_desc.uniform_blocks[0].glsl_uniforms[3].array_count = 1;
-    shader_desc.uniform_blocks[0].glsl_uniforms[4].glsl_name = "surface";
-    shader_desc.uniform_blocks[0].glsl_uniforms[4].type = SG_UNIFORMTYPE_FLOAT4;
-    shader_desc.uniform_blocks[0].glsl_uniforms[4].array_count = 1;
-    shader_desc.label = "toon-shader";
-    const sg_shader shader = sg_make_shader(&shader_desc);
+    impl_->toon_program = buildProgram(toonVertexShaderSource(), toonFragmentShaderSource(), "toon");
+    if (impl_->toon_program != 0) {
+        impl_->toon_mvp = glGetUniformLocation(impl_->toon_program, "mvp");
+        impl_->toon_model = glGetUniformLocation(impl_->toon_program, "model");
+        impl_->toon_light_dir_bands = glGetUniformLocation(impl_->toon_program, "light_dir_bands");
+        impl_->toon_style = glGetUniformLocation(impl_->toon_program, "style");
+        impl_->toon_surface = glGetUniformLocation(impl_->toon_program, "surface");
+    }
 
-    sg_pipeline_desc pipeline_desc{};
-    pipeline_desc.shader = shader;
-    pipeline_desc.layout.buffers[0].stride = sizeof(Vertex);
-    pipeline_desc.layout.attrs[0].format = SG_VERTEXFORMAT_FLOAT3;
-    pipeline_desc.layout.attrs[1].format = SG_VERTEXFORMAT_FLOAT3;
-    pipeline_desc.layout.attrs[2].format = SG_VERTEXFORMAT_FLOAT4;
-    pipeline_desc.index_type = SG_INDEXTYPE_UINT16;
-    pipeline_desc.depth.compare = SG_COMPAREFUNC_LESS_EQUAL;
-    pipeline_desc.depth.write_enabled = true;
-    pipeline_desc.cull_mode = SG_CULLMODE_BACK;
-    pipeline_desc.label = "toon-pipeline";
-    impl_->toon_pipeline = sg_make_pipeline(&pipeline_desc);
+    impl_->outline_program = buildProgram(outlineVertexShaderSource(), outlineFragmentShaderSource(), "outline");
+    if (impl_->outline_program != 0) {
+        impl_->outline_mvp = glGetUniformLocation(impl_->outline_program, "mvp");
+        impl_->outline_thickness = glGetUniformLocation(impl_->outline_program, "outline_thickness");
+        impl_->outline_color = glGetUniformLocation(impl_->outline_program, "outline_color");
+    }
 
-    sg_shader_desc outline_shader_desc{};
-    outline_shader_desc.vertex_func.source = outlineVertexShaderSource();
-    outline_shader_desc.fragment_func.source = outlineFragmentShaderSource();
-    outline_shader_desc.attrs[0].glsl_name = "position";
-    outline_shader_desc.attrs[1].glsl_name = "normal0";
-    outline_shader_desc.uniform_blocks[0].stage = SG_SHADERSTAGE_VERTEX;
-    outline_shader_desc.uniform_blocks[0].size = sizeof(OutlineUniforms);
-    outline_shader_desc.uniform_blocks[0].layout = SG_UNIFORMLAYOUT_STD140;
-    outline_shader_desc.uniform_blocks[0].glsl_uniforms[0].glsl_name = "mvp";
-    outline_shader_desc.uniform_blocks[0].glsl_uniforms[0].type = SG_UNIFORMTYPE_MAT4;
-    outline_shader_desc.uniform_blocks[0].glsl_uniforms[0].array_count = 1;
-    outline_shader_desc.uniform_blocks[0].glsl_uniforms[1].glsl_name = "outline_color_thickness";
-    outline_shader_desc.uniform_blocks[0].glsl_uniforms[1].type = SG_UNIFORMTYPE_FLOAT4;
-    outline_shader_desc.uniform_blocks[0].glsl_uniforms[1].array_count = 1;
-    outline_shader_desc.label = "outline-shader";
-    const sg_shader outline_shader = sg_make_shader(&outline_shader_desc);
-
-    sg_pipeline_desc outline_pipeline_desc{};
-    outline_pipeline_desc.shader = outline_shader;
-    outline_pipeline_desc.layout.buffers[0].stride = sizeof(Vertex);
-    outline_pipeline_desc.layout.attrs[0].format = SG_VERTEXFORMAT_FLOAT3;
-    outline_pipeline_desc.layout.attrs[1].format = SG_VERTEXFORMAT_FLOAT3;
-    outline_pipeline_desc.index_type = SG_INDEXTYPE_UINT16;
-    outline_pipeline_desc.depth.compare = SG_COMPAREFUNC_LESS_EQUAL;
-    outline_pipeline_desc.depth.write_enabled = false;
-    outline_pipeline_desc.cull_mode = SG_CULLMODE_FRONT;
-    outline_pipeline_desc.label = "outline-pipeline";
-    impl_->outline_pipeline = sg_make_pipeline(&outline_pipeline_desc);
-
-    impl_->bindings.vertex_buffers[0] = impl_->vertex_buffer;
-    impl_->bindings.index_buffer = impl_->index_buffer;
-    impl_->pass_action.colors[0].load_action = SG_LOADACTION_CLEAR;
-    impl_->pass_action.colors[0].clear_value = {0.08f, 0.09f, 0.11f, 1.0f};
-    impl_->pass_action.depth.load_action = SG_LOADACTION_CLEAR;
-    impl_->pass_action.depth.clear_value = 1.0f;
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LEQUAL);
+    glEnable(GL_CULL_FACE);
+    // Vertex winding is clockwise, matching the sokol default this scene was authored with.
+    glFrontFace(GL_CW);
 }
 
-void Renderer::draw(const gameplay::GameState& gameplay, debug::DebugUi& debug_ui) {
-    sg_pass pass{};
-    pass.action = impl_->pass_action;
-    pass.swapchain = sglue_swapchain();
+void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, int framebuffer_height) {
+    glViewport(0, 0, framebuffer_width, framebuffer_height);
+    glClearColor(0.08f, 0.09f, 0.11f, 1.0f);
+#if defined(CHI_GLES)
+    glClearDepthf(1.0f);
+#else
+    glClearDepth(1.0);
+#endif
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    sg_begin_pass(&pass);
-    sg_apply_pipeline(impl_->toon_pipeline);
-    sg_apply_bindings(&impl_->bindings);
+    glBindVertexArray(impl_->vao);
 
-    const float aspect = pass.swapchain.width > 0 && pass.swapchain.height > 0
-        ? static_cast<float>(pass.swapchain.width) / static_cast<float>(pass.swapchain.height)
+    const float aspect = framebuffer_width > 0 && framebuffer_height > 0
+        ? static_cast<float>(framebuffer_width) / static_cast<float>(framebuffer_height)
         : 16.0f / 9.0f;
     const Mat4 projection = perspective(60.0f * kPi / 180.0f, aspect, 0.01f, 100.0f);
     const Mat4 view = lookAt(4.5f, 3.5f, 6.0f, 0.0f, 0.0f, 0.0f);
     const Mat4 view_projection = multiply(projection, view);
 
-    const Mat4 ground_model = identity();
-    ToonUniforms ground_uniforms = makeToonUniforms(view_projection, ground_model, impl_->style, true);
-    sg_range ground_range{&ground_uniforms, sizeof(ground_uniforms)};
-    sg_apply_uniforms(0, &ground_range);
-    sg_draw(36, 6, 1);
+    glUseProgram(impl_->toon_program);
+    const auto drawToon = [this](const ToonVsUniforms& vs, const ToonFsUniforms& fs, GLsizei count, const void* offset) {
+        glUniformMatrix4fv(impl_->toon_mvp, 1, GL_FALSE, vs.mvp.m);
+        glUniformMatrix4fv(impl_->toon_model, 1, GL_FALSE, vs.model.m);
+        glUniform4fv(impl_->toon_light_dir_bands, 1, fs.light_dir_bands);
+        glUniform4fv(impl_->toon_style, 1, fs.style);
+        glUniform4fv(impl_->toon_surface, 1, fs.surface);
+        glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, offset);
+    };
+
+    const ToonVsUniforms ground_vs = makeToonVsUniforms(view_projection, identity());
+    const ToonFsUniforms ground_fs = makeToonFsUniforms(impl_->style, true);
+    drawToon(ground_vs, ground_fs, 6, reinterpret_cast<const void*>(36 * sizeof(uint16_t)));
 
     const Mat4 model = translation(gameplay.playerX(), 0.0f, gameplay.playerZ());
-    ToonUniforms cube_uniforms = makeToonUniforms(view_projection, model, impl_->style, false);
-    sg_range cube_range{&cube_uniforms, sizeof(cube_uniforms)};
-    sg_apply_uniforms(0, &cube_range);
-    sg_draw(0, 36, 1);
+    const ToonVsUniforms cube_vs = makeToonVsUniforms(view_projection, model);
+    const ToonFsUniforms cube_fs = makeToonFsUniforms(impl_->style, false);
+    drawToon(cube_vs, cube_fs, 36, nullptr);
 
     if (impl_->style.outline_thickness > 0.0f) {
-        OutlineUniforms outline_uniforms = makeOutlineUniforms(view_projection, model, impl_->style);
-        sg_range outline_range{&outline_uniforms, sizeof(outline_uniforms)};
-        sg_apply_pipeline(impl_->outline_pipeline);
-        sg_apply_bindings(&impl_->bindings);
-        sg_apply_uniforms(0, &outline_range);
-        sg_draw(0, 36, 1);
+        const OutlineVsUniforms outline_vs = makeOutlineVsUniforms(view_projection, model, impl_->style);
+        const OutlineFsUniforms outline_fs = makeOutlineFsUniforms(impl_->style);
+        glUseProgram(impl_->outline_program);
+        glUniformMatrix4fv(impl_->outline_mvp, 1, GL_FALSE, outline_vs.mvp.m);
+        glUniform4fv(impl_->outline_thickness, 1, outline_vs.outline_thickness);
+        glUniform4fv(impl_->outline_color, 1, outline_fs.outline_color);
+
+        // Inflated back faces act as the ink outline.
+        glCullFace(GL_FRONT);
+        glDepthMask(GL_FALSE);
+        glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_SHORT, nullptr);
+        glDepthMask(GL_TRUE);
+        glCullFace(GL_BACK);
     }
 
-    debug_ui.render();
-    sg_end_pass();
-    sg_commit();
+    glBindVertexArray(0);
 }
 
 StyleSettings& Renderer::styleSettings() {
@@ -466,7 +501,8 @@ void Renderer::cleanup() {
         return;
     }
 
-    sg_shutdown();
+    glDeleteProgram(impl_->toon_program);
+    glDeleteProgram(impl_->outline_program);
     delete impl_;
     impl_ = nullptr;
 }
