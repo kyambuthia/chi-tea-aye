@@ -16,7 +16,8 @@ public:
     static constexpr float kSwitchTime = 0.35f;  // seconds for each half of a switch
     static constexpr float kAttackTime = 0.70f;  // seconds for one punch
     static constexpr float kAimTime = 0.20f;     // seconds for the aim transition
-    static constexpr float kFireTime = 1.17f;    // seconds for one rifle shot, the length of RifleFire
+    static constexpr float kFireTime = 1.17f;    // seconds of the RifleFire clip; one shot plays it once
+    static constexpr float kFireInterval = 0.12f; // seconds between shots: a rifle fires about 8 rounds a second
 
     WeaponState() = default;
 
@@ -27,7 +28,7 @@ public:
     void attack();
 
     // Rifle shot; only acts while the rifle is ready in hand and not already firing.
-    // Returns true when a shot starts.
+    // Returns true when a shot starts: the rifle is ready in hand and the fire interval has passed.
     bool fire();
 
     // Right mouse: aim only while the rifle is ready in hand.
@@ -45,8 +46,9 @@ public:
     bool attacking() const { return attack_time_ > 0.0f; }
     float attackProgress() const;  // 0 at the start of a punch, 1 when it ends
 
-    bool firing() const { return fire_time_ > 0.0f; }
-    float fireProgress() const;    // 0 at the start of a shot, 1 when it ends
+    // The shot animation plays from the last shot. A new shot restarts it.
+    bool firing() const { return shot_time_ < kFireTime; }
+    float fireProgress() const;    // 0 at the start of the latest shot, 1 when its animation ends
 
     // Aim amount, 0 hip-fire to 1 fully aimed down sights.
     float aim() const { return aim_; }
@@ -57,7 +59,8 @@ private:
     Phase phase_ = Phase::Ready;
     float phase_time_ = 0.0f;
     float attack_time_ = 0.0f;
-    float fire_time_ = 0.0f;
+    float fire_cooldown_ = 0.0f;  // seconds until the next shot is allowed
+    float shot_time_ = kFireTime; // seconds since the latest shot
     bool aiming_ = false;
     float aim_ = 0.0f;
 };

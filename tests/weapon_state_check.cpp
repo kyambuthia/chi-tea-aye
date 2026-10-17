@@ -122,34 +122,39 @@ int main() {
     }
 
     {
-        // Firing: the rifle fires one shot, the shot ends, and a second shot can follow.
+        // Firing: a shot starts, the next one waits for the fire interval, and the
+        // shot animation runs for its clip length.
         WeaponState w;
-        w.fire();
-        expect(w.firing(), "the rifle fires");
-        expect(w.fireProgress() == 0.0f, "a shot starts at progress 0");
-        run(w, WeaponState::kFireTime * 0.5f);
-        expect(w.firing() && w.fireProgress() > 0.4f && w.fireProgress() < 0.6f, "a shot is halfway at half its time");
-        w.fire();
-        run(w, WeaponState::kFireTime * 0.25f);
-        expect(w.fireProgress() > 0.7f, "a second request mid-shot does not restart it");
-        run(w, WeaponState::kFireTime);
-        expect(!w.firing(), "the shot ends");
-        w.fire();
-        expect(w.firing(), "a new shot follows once the last one ends");
+        expect(w.fire(), "the rifle fires");
+        expect(w.firing(), "the shot animation starts");
+        expect(w.fireProgress() == 0.0f, "a shot starts at animation progress 0");
+        expect(!w.fire(), "a second shot inside the fire interval is refused");
+        run(w, WeaponState::kFireInterval + 0.01f);
+        expect(w.fire(), "the next shot is allowed once the interval has passed");
+        run(w, WeaponState::kFireTime + 0.1f);
+        expect(!w.firing(), "the shot animation ends after its clip length");
+    }
+    {
+        // Holding fire: a shot each interval.
+        WeaponState w;
+        int shots = 0;
+        for (int i = 0; i < 60; ++i) {
+            if (w.fire()) ++shots;
+            w.update(1.0f / 60.0f);
+        }
+        std::printf("  one second of holding fire: %d shots\n", shots);
+        expect(shots >= 7 && shots <= 9, "holding fire gives about eight shots a second");
     }
     {
         // Firing needs the rifle ready in hand: not the pistol, the fists, or mid-switch.
         WeaponState w;
         w.request(WeaponSlot::Pistol);
-        w.fire();
-        expect(!w.firing(), "no shot while the rifle is being stowed");
+        expect(!w.fire(), "no shot while the rifle is being stowed");
         run(w, WeaponState::kSwitchTime * 2.0f + 0.01f);
-        w.fire();
-        expect(!w.firing(), "no shot with the pistol in hand");
+        expect(!w.fire(), "no shot with the pistol in hand");
         w.request(WeaponSlot::Rifle);
         run(w, WeaponState::kSwitchTime * 2.0f + 0.01f);
-        w.fire();
-        expect(w.firing(), "the rifle fires once it is ready again");
+        expect(w.fire(), "the rifle fires once it is ready again");
     }
 
     std::printf(failures == 0 ? "WEAPON STATE OK\n" : "%d FAILURE(S)\n", failures);
