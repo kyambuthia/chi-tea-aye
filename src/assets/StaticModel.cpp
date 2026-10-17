@@ -118,20 +118,32 @@ bool StaticModel::load(const void* data, size_t size, float length) {
     }
     const float scale = length / extent;
     const float centre[3] = {(lo[0] + hi[0]) * 0.5f, (lo[1] + hi[1]) * 0.5f, (lo[2] + hi[2]) * 0.5f};
-    // Cyclic permutation of the axes: the longest one becomes Z and the frame stays
-    // right-handed, so the faces keep their winding.
-    const int axis_u = (longest + 1) % 3;
-    const int axis_v = (longest + 2) % 3;
+    // Each engine axis is a signed source axis, so the frame stays right-handed and the
+    // faces keep their winding. The longest side becomes +Z. Up stays on the source's +Y
+    // (glTF is Y-up), so a prop lies the way it was modelled. Only a prop longest along Y
+    // uses a cyclic order, since its up is then not on Y.
+    float basis[3][3] = {};  // basis[k] is engine axis k, in source coordinates
+    if (longest == 1) {
+        basis[0][2] = 1.0f;
+        basis[1][0] = 1.0f;
+        basis[2][1] = 1.0f;
+    } else {
+        basis[2][longest] = 1.0f;
+        basis[1][1] = 1.0f;
+        const float* y = basis[1];
+        const float* z = basis[2];
+        basis[0][0] = y[1] * z[2] - y[2] * z[1];
+        basis[0][1] = y[2] * z[0] - y[0] * z[2];
+        basis[0][2] = y[0] * z[1] - y[1] * z[0];
+    }
     for (MeshVertex& v : mesh_.vertices) {
         const float p[3] = {(v.position[0] - centre[0]) * scale, (v.position[1] - centre[1]) * scale,
             (v.position[2] - centre[2]) * scale};
         const float n[3] = {v.normal[0], v.normal[1], v.normal[2]};
-        v.position[0] = p[axis_u];
-        v.position[1] = p[axis_v];
-        v.position[2] = p[longest];
-        v.normal[0] = n[axis_u];
-        v.normal[1] = n[axis_v];
-        v.normal[2] = n[longest];
+        for (int k = 0; k < 3; ++k) {
+            v.position[k] = basis[k][0] * p[0] + basis[k][1] * p[1] + basis[k][2] * p[2];
+            v.normal[k] = basis[k][0] * n[0] + basis[k][1] * n[1] + basis[k][2] * n[2];
+        }
     }
     return true;
 }
