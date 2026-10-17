@@ -238,6 +238,10 @@ void DebugUi::draw(const gameplay::GameState& gameplay, const app::InputState& i
 
     sectionHeader(PanelIcon::Box, "Player");
     drawStatRow("Position x,z", player_text);
+    char clip_text[48]{};
+    std::snprintf(clip_text, sizeof(clip_text), "%s  %.2fs", gameplay.clipName(), gameplay.clipTime());
+    drawStatRow("Clip", clip_text);
+    ImGui::Checkbox("Show skeleton (F1)", &style.show_skeleton);
 
     ImGui::Separator();
 

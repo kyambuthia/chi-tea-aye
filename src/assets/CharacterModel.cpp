@@ -506,6 +506,14 @@ bool CharacterModel::hasClip(const char* name) const {
     return false;
 }
 
+int CharacterModel::jointCount() const {
+    return static_cast<int>(joint_nodes_.size());
+}
+
+int CharacterModel::jointParent(int joint) const {
+    return joint >= 0 && joint < static_cast<int>(joint_parent_.size()) ? joint_parent_[joint] : -1;
+}
+
 math::Mat4 CharacterModel::jointBindWorld(int joint) const {
     return joint >= 0 && joint < static_cast<int>(joint_world_bind_.size()) ? joint_world_bind_[joint] : math::identity();
 }

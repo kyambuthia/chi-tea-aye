@@ -15,6 +15,8 @@ class World;
 namespace renderer {
 
 struct StyleSettings {
+    // Debug view: draws the warrior's joints and bones over the model.
+    bool show_skeleton = true;
     float light_x = -0.45f;
     float light_y = 0.80f;
     float light_z = 0.35f;

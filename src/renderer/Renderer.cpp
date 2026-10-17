@@ -137,6 +137,30 @@ std::string toonFragmentShaderSource() {
     )";
 }
 
+// Debug skeleton overlay: flat colour lines and points, no lighting or skinning.
+std::string skeletonVertexShaderSource() {
+    return std::string(CHI_GLSL_HEADER) + R"(
+        uniform mat4 mvp;
+        in vec3 position;
+
+        void main() {
+            gl_Position = mvp * vec4(position, 1.0);
+            gl_PointSize = 7.0;
+        }
+    )";
+}
+
+std::string skeletonFragmentShaderSource() {
+    return std::string(CHI_GLSL_HEADER) + R"(
+        uniform vec4 color;
+        out vec4 frag_color;
+
+        void main() {
+            frag_color = color;
+        }
+    )";
+}
+
 // Vertex layout shared by every program: attribute locations are fixed so a
 // single attribute setup works for both static and skinned meshes.
 enum AttributeLocation : GLuint {
@@ -325,12 +349,58 @@ struct Renderer::Impl {
     GLint toon_style = -1;
     GLint toon_surface = -1;
 
+    GLuint skeleton_program = 0;
+    GLuint skeleton_vao = 0;
+    GLuint skeleton_vbo = 0;
+    GLint skeleton_mvp = -1;
+    GLint skeleton_color = -1;
+
     const assets::CharacterModel* character = nullptr;
     const world::World* world = nullptr;
     assets::GroundHeightFn ground_height;
     Mat4 joint_matrices[kJoints]{};
     StyleSettings style{};
 };
+
+GLuint buildSkeletonProgram() {
+    auto compile = [](GLenum type, const std::string& source) {
+        const GLuint shader = glCreateShader(type);
+        const char* text = source.c_str();
+        glShaderSource(shader, 1, &text, nullptr);
+        glCompileShader(shader);
+        GLint ok = 0;
+        glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
+        if (ok == 0) {
+            char log[2048]{};
+            glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
+            std::fprintf(stderr, "[renderer] skeleton shader compile failed: %s\n", log);
+            glDeleteShader(shader);
+            return GLuint{0};
+        }
+        return shader;
+    };
+    const GLuint vs = compile(GL_VERTEX_SHADER, skeletonVertexShaderSource());
+    const GLuint fs = compile(GL_FRAGMENT_SHADER, skeletonFragmentShaderSource());
+    if (vs == 0 || fs == 0) {
+        return 0;
+    }
+    const GLuint program = glCreateProgram();
+    glAttachShader(program, vs);
+    glAttachShader(program, fs);
+    glBindAttribLocation(program, kAttrPosition, "position");
+    glLinkProgram(program);
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+    GLint ok = 0;
+    glGetProgramiv(program, GL_LINK_STATUS, &ok);
+    if (ok == 0) {
+        char log[2048]{};
+        glGetProgramInfoLog(program, sizeof(log), nullptr, log);
+        std::fprintf(stderr, "[renderer] skeleton program link failed: %s\n", log);
+        return 0;
+    }
+    return program;
+}
 
 void Renderer::init(const assets::CharacterModel& character, const world::World& world) {
     impl_ = new Impl{};
@@ -364,6 +434,14 @@ void Renderer::init(const assets::CharacterModel& character, const world::World&
         glUseProgram(impl_->toon_program);
         glUniform1i(glGetUniformLocation(impl_->toon_program, "base_color"), 0);
     }
+
+    impl_->skeleton_program = buildSkeletonProgram();
+    if (impl_->skeleton_program != 0) {
+        impl_->skeleton_mvp = glGetUniformLocation(impl_->skeleton_program, "mvp");
+        impl_->skeleton_color = glGetUniformLocation(impl_->skeleton_program, "color");
+    }
+    glGenVertexArrays(1, &impl_->skeleton_vao);
+    glGenBuffers(1, &impl_->skeleton_vbo);
 
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LEQUAL);
@@ -445,6 +523,52 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     glBindTexture(GL_TEXTURE_2D, impl_->warrior_texture);
     glBindVertexArray(impl_->warrior.vao);
     glDrawElements(GL_TRIANGLES, impl_->warrior.index_count, GL_UNSIGNED_SHORT, nullptr);
+
+    if (impl_->style.show_skeleton && impl_->skeleton_program != 0) {
+        // Joint world positions: skin matrix times bind pose (the inverse of the bind's inverse).
+        const int joint_count = impl_->character->jointCount();
+        std::vector<float> bones;
+        std::vector<float> points;
+        std::vector<Mat4> world(joint_count);
+        for (int j = 0; j < joint_count; ++j) {
+            world[j] = math::multiply(impl_->joint_matrices[j], impl_->character->jointBindWorld(j));
+        }
+        for (int j = 0; j < joint_count; ++j) {
+            const Mat4& w = world[j];
+            points.insert(points.end(), {w.m[12], w.m[13], w.m[14]});
+            const int parent = impl_->character->jointParent(j);
+            if (parent >= 0) {
+                const Mat4& pw = world[parent];
+                bones.insert(bones.end(), {pw.m[12], pw.m[13], pw.m[14], w.m[12], w.m[13], w.m[14]});
+            }
+        }
+
+        glDisable(GL_DEPTH_TEST);
+#if !defined(CHI_GLES)
+        glEnable(0x8642);  // GL_PROGRAM_POINT_SIZE, so the shader's point size applies
+#endif
+        glUseProgram(impl_->skeleton_program);
+        glUniformMatrix4fv(impl_->skeleton_mvp, 1, GL_FALSE, view_projection.m);
+        glBindVertexArray(impl_->skeleton_vao);
+        glBindBuffer(GL_ARRAY_BUFFER, impl_->skeleton_vbo);
+
+        glEnableVertexAttribArray(kAttrPosition);
+        glVertexAttribPointer(kAttrPosition, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
+
+        // Bones: yellow lines.
+        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(bones.size() * sizeof(float)), bones.data(), GL_DYNAMIC_DRAW);
+        const float bone_color[4] = {1.0f, 0.9f, 0.2f, 1.0f};
+        glUniform4fv(impl_->skeleton_color, 1, bone_color);
+        glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(bones.size() / 3));
+
+        // Joints: red points.
+        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(points.size() * sizeof(float)), points.data(), GL_DYNAMIC_DRAW);
+        const float joint_color[4] = {1.0f, 0.25f, 0.25f, 1.0f};
+        glUniform4fv(impl_->skeleton_color, 1, joint_color);
+        glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(points.size() / 3));
+
+        glEnable(GL_DEPTH_TEST);
+    }
 
     glBindVertexArray(0);
 }

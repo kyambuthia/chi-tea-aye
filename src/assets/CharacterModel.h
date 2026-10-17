@@ -48,6 +48,12 @@ public:
 
     const CharacterMesh& mesh() const;
     bool hasClip(const char* name) const;
+    // Number of joints in the skin.
+    int jointCount() const;
+
+    // Parent joint of a joint, or -1 for a root.
+    int jointParent(int joint) const;
+
     // Bind-pose model-space transform of a joint, for diagnostics and checks.
     math::Mat4 jointBindWorld(int joint) const;
 

@@ -136,6 +136,9 @@ public:
                 return SDL_APP_SUCCESS;
             case SDL_EVENT_KEY_DOWN:
             case SDL_EVENT_KEY_UP:
+                if (e->key.scancode == SDL_SCANCODE_F1 && e->type == SDL_EVENT_KEY_DOWN && !e->key.repeat) {
+                    renderer_.styleSettings().show_skeleton = !renderer_.styleSettings().show_skeleton;
+                }
                 if (e->key.scancode == SDL_SCANCODE_ESCAPE && e->type == SDL_EVENT_KEY_DOWN) {
                     return SDL_APP_SUCCESS;
                 }
