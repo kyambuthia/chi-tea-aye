@@ -218,13 +218,11 @@ std::string scopeFragmentShaderSource() {
         void main() {
             // Units of half the framebuffer height, so the lens is round on any aspect.
             vec2 p = vec2(v_ndc.x * aspect, v_ndc.y);
-            float r = length(p);
-            float outside = smoothstep(0.40, 0.42, r);
+            // Only the crosshair: no darkening outside the view, so the scene stays visible.
             float hair_x = step(abs(p.x), 0.0025) * step(0.02, abs(p.y)) * step(abs(p.y), 0.30);
             float hair_y = step(abs(p.y), 0.0025) * step(0.02, abs(p.x)) * step(abs(p.x), 0.30);
-            float reticle = max(hair_x, hair_y) * (1.0 - outside);
-            float shade = max(outside * 0.92, reticle);
-            frag_color = vec4(0.0, 0.0, 0.0, shade * alpha);
+            float reticle = max(hair_x, hair_y);
+            frag_color = vec4(0.0, 0.0, 0.0, reticle * alpha);
         }
     )";
 }

@@ -33,6 +33,11 @@ constexpr float kRecoilSettle = 12.0f;
 constexpr float kGripModel[3] = {-0.1f, 1.28f, 0.098f};
 // The bore sits this far above the grip (matches the rifle's grip offset in the renderer).
 constexpr float kGripBelowBore = 0.05f;
+// Aimed sight: no turn of the aim (kAimYaw = 0 keeps the verified sight view).
+constexpr float kAimYaw = 0.0f;
+// Orbit view: the look point sits this far to the warrior's left, so the crosshair at the
+// centre of the view falls left of the warrior. The eye stays put, so the shots follow.
+constexpr float kOrbitShift = 0.25f;
 // The eye sits this far behind the grip, this far above it and to the right, over the shoulder.
 constexpr float kSightBack = 0.35f;
 constexpr float kSightUp = 0.1f;
@@ -391,7 +396,14 @@ void GameState::cameraView(float eye[3], float look[3]) const {
     // pulled in by walls.
     const float distance = clearCameraDistance(camera_distance_);
     const float horizontal = distance * std::cos(pitch);
-    const float orbit_look[3] = {camera_target_x_, look_height_, camera_target_z_};
+    // The look point is shifted to the warrior's left (the camera's -right), so the crosshair
+    // lands left of the warrior. Aimed, the sight view takes over (see below).
+    const float orbit_right[3] = {std::cos(az), 0.0f, -std::sin(az)};
+    const float orbit_look[3] = {
+        camera_target_x_ - orbit_right[0] * kOrbitShift,
+        look_height_,
+        camera_target_z_ - orbit_right[2] * kOrbitShift,
+    };
     const float orbit_eye[3] = {
         orbit_look[0] + horizontal * std::sin(az),
         orbit_look[1] + distance * std::sin(pitch),
@@ -413,10 +425,14 @@ void GameState::cameraView(float eye[3], float look[3]) const {
         bore[1] - forward[1] * kSightBack + kSightUp,
         bore[2] - forward[2] * kSightBack + right[2] * kSightRight,
     };
+    // Turn the aim a little to the warrior's left, keeping its pitch.
+    float aim_dir[3] = {forward[0] - right[0] * kAimYaw, forward[1], forward[2] - right[2] * kAimYaw};
+    const float aim_len = std::sqrt(aim_dir[0] * aim_dir[0] + aim_dir[1] * aim_dir[1] + aim_dir[2] * aim_dir[2]);
+    for (float& c : aim_dir) c /= aim_len;
     const float sight_look[3] = {
-        sight_eye[0] + forward[0] * kSightRange,
-        sight_eye[1] + forward[1] * kSightRange,
-        sight_eye[2] + forward[2] * kSightRange,
+        sight_eye[0] + aim_dir[0] * kSightRange,
+        sight_eye[1] + aim_dir[1] * kSightRange,
+        sight_eye[2] + aim_dir[2] * kSightRange,
     };
 
     // Blend from the orbit view to the sight view as the rifle comes up.
