@@ -177,6 +177,13 @@ void appendJoint(ozz::animation::offline::RawSkeleton::Joint& out, int j, const 
 
 } // namespace
 
+struct CharacterModel::SampleScratch {
+    std::vector<ozz::math::SoaTransform> soa;
+    std::vector<math::Mat4> locals;
+    std::unique_ptr<ozz::animation::SamplingJob::Context> context;
+    int context_tracks = -1;
+};
+
 CharacterModel::CharacterModel() = default;
 
 CharacterModel::~CharacterModel() {
@@ -565,11 +572,19 @@ void CharacterModel::evaluatePose(const char* clip_name, float time_seconds, con
     const float t = duration > 0.0f ? std::fmod(time_seconds, duration) : 0.0f;
 
     const int joint_count = skeleton_->num_joints();
-    std::vector<ozz::math::SoaTransform> soa(skeleton_->num_soa_joints());
-    ozz::animation::SamplingJob::Context context(joint_count);
+    if (!scratch_) {
+        scratch_ = std::make_unique<SampleScratch>();
+    }
+    SampleScratch& scratch = *scratch_;
+    if (!scratch.context || scratch.context_tracks != joint_count) {
+        scratch.context = std::make_unique<ozz::animation::SamplingJob::Context>(joint_count);
+        scratch.context_tracks = joint_count;
+    }
+    std::vector<ozz::math::SoaTransform>& soa = scratch.soa;
+    soa.resize(skeleton_->num_soa_joints());
     ozz::animation::SamplingJob sampling;
     sampling.animation = &animation;
-    sampling.context = &context;
+    sampling.context = scratch.context.get();
     sampling.ratio = duration > 0.0f ? t / duration : 0.0f;
     sampling.output = ozz::span<ozz::math::SoaTransform>(soa.data(), soa.size());
     if (!sampling.Run()) {
@@ -577,7 +592,8 @@ void CharacterModel::evaluatePose(const char* clip_name, float time_seconds, con
     }
 
     // Unpack the sampled locals, one joint at a time, in depth-first order.
-    std::vector<math::Mat4> locals(joint_count);
+    std::vector<math::Mat4>& locals = scratch.locals;
+    locals.resize(joint_count);
     for (int k = 0; k < joint_count; ++k) {
         const ozz::math::SoaTransform& s = soa[k / 4];
         const int lane = k % 4;

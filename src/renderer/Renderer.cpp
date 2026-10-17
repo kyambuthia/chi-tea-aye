@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -627,11 +628,10 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     const gameplay::WeaponSlot slot = gameplay.weapon().active();
     if (slot == gameplay::WeaponSlot::Rifle || slot == gameplay::WeaponSlot::Pistol) {
         const bool rifle = slot == gameplay::WeaponSlot::Rifle;
-        const std::string name = clip_name;
         const char* held = nullptr;
-        if (name == "Idle") held = rifle ? "RifleIdleAim" : "PistolIdle";
-        else if (name == "Walk") held = rifle ? "RifleWalk" : "PistolWalk";
-        else if (name == "Run") held = rifle ? "RifleRun" : "PistolRun";
+        if (std::strcmp(clip_name, "Idle") == 0) held = rifle ? "RifleIdleAim" : "PistolIdle";
+        else if (std::strcmp(clip_name, "Walk") == 0) held = rifle ? "RifleWalk" : "PistolWalk";
+        else if (std::strcmp(clip_name, "Run") == 0) held = rifle ? "RifleRun" : "PistolRun";
         if (held != nullptr && impl_->character->hasClip(held)) {
             clip_name = held;
         }

@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -109,6 +110,10 @@ private:
     std::vector<ozz::unique_ptr<ozz::animation::Animation>> animations_;
     std::vector<std::string> animation_names_;
     std::vector<int> dfs_joint_;
+
+    // Buffers reused by every evaluatePose call, so a frame does not allocate.
+    struct SampleScratch;
+    mutable std::unique_ptr<SampleScratch> scratch_;
 
     FootChain feet_[2];
     int hips_ = -1;
