@@ -95,6 +95,7 @@ std::string toonFragmentShaderSource() {
         uniform vec4 light_dir_bands;
         uniform vec4 style;
         uniform vec4 surface;
+        uniform vec3 eye_pos;
         uniform sampler2D base_color;
 
         in vec3 normal;
@@ -112,15 +113,24 @@ std::string toonFragmentShaderSource() {
             float shade = floor(ndotl * bands) / (bands - 1.0);
             float ink_shadow = mix(0.42, 1.08, shade);
             vec3 albedo = color.rgb * texture(base_color, v_uv).rgb;
-            vec3 final_color = albedo * ink_shadow;
+
+            // Fill light from above and from the camera, so the back of the
+            // character is not in shadow, plus a rim light on the silhouette.
+            vec3 view_dir = normalize(eye_pos - world_pos);
+            float facing = max(dot(n, view_dir), 0.0);
+            float rim = pow(1.0 - facing, 3.0);
+            float fill = 0.10 + 0.08 * max(n.y, 0.0) + 0.18 * facing;
+            vec3 final_color = albedo * (ink_shadow + fill) + albedo * 0.25 * rim;
 
             if ((surface.x < 0.5) && (style.x > 0.5)) {
                 vec3 object_coord = (local_pos + vec3(0.5)) * max(style.z, 1.0);
                 vec2 pattern_uv = abs(n.y) > 0.5 ? object_coord.xz : (abs(n.x) > 0.5 ? object_coord.zy : object_coord.xy);
-                vec2 cell = floor(pattern_uv);
-                float checker = mod(cell.x + cell.y, 2.0);
-                float dots = mix(1.0, 1.0 - style.y, checker);
-                final_color *= dots;
+                // One round dot per cell. Shadowed areas get bigger dots.
+                float dist = length(fract(pattern_uv) - 0.5);
+                float radius = 0.45 * sqrt(1.0 - clamp(ndotl, 0.0, 1.0));
+                float aa = max(fwidth(dist), 0.001);
+                float dot_mask = 1.0 - smoothstep(radius - aa, radius + aa, dist);
+                final_color *= mix(1.0, 1.0 - style.y, dot_mask);
             }
 
             if (surface.x > 0.5) {
@@ -392,6 +402,7 @@ struct Renderer::Impl {
     GLint toon_joints = -1;
     GLint toon_light_dir_bands = -1;
     GLint toon_style = -1;
+    GLint toon_eye = -1;
     float clip_time = 0.0f;      // last frame: time within the clip, wrapped
     float clip_duration = 0.0f;  // last frame: the clip length
     GLint toon_surface = -1;
@@ -505,6 +516,7 @@ void Renderer::init(const assets::CharacterModel& character, const world::World&
         impl_->toon_joints = glGetUniformLocation(impl_->toon_program, "joints");
         impl_->toon_light_dir_bands = glGetUniformLocation(impl_->toon_program, "light_dir_bands");
         impl_->toon_style = glGetUniformLocation(impl_->toon_program, "style");
+        impl_->toon_eye = glGetUniformLocation(impl_->toon_program, "eye_pos");
         impl_->toon_surface = glGetUniformLocation(impl_->toon_program, "surface");
         glUseProgram(impl_->toon_program);
         glUniform1i(glGetUniformLocation(impl_->toon_program, "base_color"), 0);
@@ -564,9 +576,10 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     const float aim = gameplay.weapon().aim();
     const float distance = gameplay.cameraDistance() * (1.0f - 0.35f * aim);
     const float horizontal = distance * std::cos(pitch);
-    const Mat4 view = math::lookAt(
-        target_x + horizontal * std::sin(azimuth), target_y + distance * std::sin(pitch), target_z + horizontal * std::cos(azimuth),
-        target_x, target_y, target_z);
+    const float eye_x = target_x + horizontal * std::sin(azimuth);
+    const float eye_y = target_y + distance * std::sin(pitch);
+    const float eye_z = target_z + horizontal * std::cos(azimuth);
+    const Mat4 view = math::lookAt(eye_x, eye_y, eye_z, target_x, target_y, target_z);
     const float fov = (60.0f - 30.0f * aim) * kPi / 180.0f;
     const Mat4 view_projection = math::multiply(perspectiveFor(framebuffer_width, framebuffer_height, fov), view);
 
@@ -590,6 +603,7 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     };
 
     glUseProgram(impl_->toon_program);
+    glUniform3f(impl_->toon_eye, eye_x, eye_y, eye_z);
     glActiveTexture(GL_TEXTURE0);
 
     // Ground: static geometry, so the skinning path is skipped.
