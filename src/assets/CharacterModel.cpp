@@ -30,6 +30,7 @@ constexpr float kMeshFrontYaw = 0.0f;
 constexpr float kPlantedClearance = 0.10f;
 constexpr float kSwingClearance = 0.20f;
 constexpr float kMaxPelvisDrop = 0.25f;
+constexpr float kPelvisShare = 0.5f;  // fraction of the lower foot's drop the pelvis takes
 
 // Translation, rotation (x, y, z, w), and scale of a local transform.
 struct Trs {
@@ -505,6 +506,10 @@ bool CharacterModel::hasClip(const char* name) const {
     return false;
 }
 
+math::Mat4 CharacterModel::jointBindWorld(int joint) const {
+    return joint >= 0 && joint < static_cast<int>(joint_world_bind_.size()) ? joint_world_bind_[joint] : math::identity();
+}
+
 int CharacterModel::jointIndex(const char* name) const {
     for (size_t j = 0; j < joint_nodes_.size(); ++j) {
         const auto* node = static_cast<const cgltf_node*>(joint_nodes_[j]);
@@ -625,7 +630,10 @@ void CharacterModel::applyFootIk(std::vector<math::Mat4>& locals, const math::Ma
         }
     }
 
-    // Drop the pelvis so the lower foot can reach the ground. Never raise it.
+    // Drop the pelvis by half of the lower foot's shortfall, and let the foot
+    // make up the rest. Dropping by all of it bends the other knee, which is
+    // also on a different height. Never raise the pelvis.
+    shift *= kPelvisShare;
     if (shift < -kMaxPelvisDrop) {
         shift = -kMaxPelvisDrop;
     }

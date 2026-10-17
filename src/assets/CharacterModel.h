@@ -48,6 +48,9 @@ public:
 
     const CharacterMesh& mesh() const;
     bool hasClip(const char* name) const;
+    // Bind-pose model-space transform of a joint, for diagnostics and checks.
+    math::Mat4 jointBindWorld(int joint) const;
+
     // Skin joint index of the named bone, or -1 if the rig has no such bone.
     int jointIndex(const char* name) const;
 

@@ -433,7 +433,7 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     // Warrior: place the root on the terrain and turn it so its measured front
     // faces the heading. The pose is solved in world space (with foot IK), so
     // the model matrix is the identity.
-    const Mat4 root = math::multiply(math::translation(px, impl_->world->groundHeight(px, pz), pz),
+    const Mat4 root = math::multiply(impl_->world->groundFrame(px, pz),
         math::rotationY(gameplay.playerYaw() - impl_->character->frontYaw()));
     impl_->character->evaluatePose(gameplay.clipName(), gameplay.clipTime(), root, impl_->ground_height,
         impl_->joint_matrices);
