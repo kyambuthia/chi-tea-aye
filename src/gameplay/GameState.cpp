@@ -67,6 +67,9 @@ constexpr float kMinPitch = -0.15f;
 constexpr float kMaxPitch = 1.1f;
 constexpr float kMinDistance = 2.0f;
 constexpr float kMaxDistance = 6.0f;
+// The inspection camera (F3) zooms closer, to check the hands on the model.
+constexpr float kInspectDistance = 1.0f;
+constexpr float kInspectMinDistance = 0.8f;
 
 // Signed angle from one heading to another, in (-pi, pi].
 float angleBetween(float from, float to) {
@@ -125,7 +128,12 @@ void GameState::update(const app::InputState& input, physics::Physics& physics, 
     } else {
         idle_orbit_time_ += delta_time;
     }
-    distance_target_ = std::fmin(kMaxDistance, std::fmax(kMinDistance, distance_target_ - input.zoom_steps * 0.3f));
+    if (input.inspect_pressed) {
+        inspecting_ = !inspecting_;
+        distance_target_ = inspecting_ ? kInspectDistance : kMinDistance;
+    }
+    const float min_distance = inspecting_ ? kInspectMinDistance : kMinDistance;
+    distance_target_ = std::fmin(kMaxDistance, std::fmax(min_distance, distance_target_ - input.zoom_steps * 0.3f));
 
     // Recenter slowly behind the warrior, only once the player has stopped
     // orbiting and stopped moving. Never while a movement key is held.

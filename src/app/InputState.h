@@ -26,6 +26,7 @@ struct InputState {
     bool attack_pressed = false;
     bool fire_pressed = false;
     bool crouch_pressed = false;
+    bool inspect_pressed = false;  // F3: toggles the close inspection camera
     bool fire_held = false;  // the fire button (left mouse or Space) is down
     bool aim_held = false;
     float look_dx = 0.0f;

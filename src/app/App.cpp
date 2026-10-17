@@ -107,6 +107,7 @@ public:
         input_.attack_pressed = false;
         input_.fire_pressed = false;
         input_.crouch_pressed = false;
+        input_.inspect_pressed = false;
         input_.tapped = app::KeyState{};
 
         debug_ui_.beginFrame();
@@ -116,6 +117,9 @@ public:
             debug_ui_.drawWeaponWheel(windowCentreX(), windowCentreY(), kWheelRadius, wheelSelection());
         }
         debug_ui_.drawShotFeedback(shotFeedback());
+        if (renderer_.styleSettings().show_rifle_points) {
+            debug_ui_.drawRiflePoints(riflePointsOnWindow());
+        }
 
 #if defined(__EMSCRIPTEN__)
         // The page owns the canvas size on web; keep the window matched to it.
@@ -180,6 +184,12 @@ public:
                     if (e->key.scancode == SDL_SCANCODE_A) input_.tapped.a = true;
                     if (e->key.scancode == SDL_SCANCODE_S) input_.tapped.s = true;
                     if (e->key.scancode == SDL_SCANCODE_D) input_.tapped.d = true;
+                }
+                if (e->key.scancode == SDL_SCANCODE_F3 && e->type == SDL_EVENT_KEY_DOWN && !e->key.repeat) {
+                    input_.inspect_pressed = true;
+                }
+                if (e->key.scancode == SDL_SCANCODE_F2 && e->type == SDL_EVENT_KEY_DOWN && !e->key.repeat) {
+                    renderer_.styleSettings().show_rifle_points = !renderer_.styleSettings().show_rifle_points;
                 }
                 if (e->key.scancode == SDL_SCANCODE_F1 && e->type == SDL_EVENT_KEY_DOWN && !e->key.repeat) {
                     renderer_.styleSettings().show_skeleton = !renderer_.styleSettings().show_skeleton;
@@ -294,6 +304,21 @@ private:
         x = (ndc_x * 0.5f + 0.5f) * static_cast<float>(w);
         y = (0.5f - ndc_y * 0.5f) * static_cast<float>(h);
         return true;
+    }
+
+    // The rifle's hand, grip, fore-end and muzzle, positioned on the window (the overlay).
+    debug::RiflePointsOverlay riflePointsOnWindow() const {
+        debug::RiflePointsOverlay overlay;
+        renderer::Renderer::RiflePoints points{};
+        overlay.visible = renderer_.riflePoints(points);
+        if (!overlay.visible) {
+            return overlay;
+        }
+        overlay.hand_visible = windowPoint(points.hand, overlay.hand_x, overlay.hand_y);
+        overlay.grip_visible = windowPoint(points.grip, overlay.grip_x, overlay.grip_y);
+        overlay.fore_visible = windowPoint(points.fore, overlay.fore_x, overlay.fore_y);
+        overlay.muzzle_visible = windowPoint(points.muzzle, overlay.muzzle_x, overlay.muzzle_y);
+        return overlay;
     }
 
     // The shot's muzzle flash, tracer and impact, positioned on the window.

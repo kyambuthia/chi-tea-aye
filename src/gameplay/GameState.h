@@ -96,6 +96,7 @@ private:
     float yaw_ = 0.0f;
     float clip_time_ = 0.0f;
     bool crouched_ = false;
+    bool inspecting_ = false;  // F3: the close camera for checking the model
     float fire_buffer_ = 0.0f;  // seconds a press stays ready for the next shot
     float recoil_kick_ = 0.0f;  // radians the camera is kicked up, decaying after each shot
     ShotEvent last_shot_;

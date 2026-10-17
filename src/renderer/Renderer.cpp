@@ -453,6 +453,8 @@ struct Renderer::Impl {
     Mat4 last_view_projection = math::identity();
     bool muzzle_valid = false;
     float muzzle[3] = {0.0f, 0.0f, 0.0f};
+    RiflePoints rifle_points{};
+    bool rifle_points_valid = false;
     float clip_duration = 0.0f;  // last frame: the clip length
     GLint toon_surface = -1;
 
@@ -734,6 +736,7 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     const bool rifle_held = impl_->hand_joint >= 0 && impl_->left_hand_joint >= 0 && rifle_ready &&
         impl_->rifle_mesh.index_count > 0;
     impl_->muzzle_valid = false;
+    impl_->rifle_points_valid = false;
     Mat4 rifle_model = math::identity();
     // Aimed, the grip is the sight grip on the aim line, and the right hand is solved
     // onto it. Otherwise the hand, as the clip poses it, holds the rifle.
@@ -757,10 +760,13 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
 
         // Direction: from the grip toward the fore-end the hands hold, blended into the
         // camera's aim line as the rifle is raised and fired. Shots go where the rifle points.
-        float hand_dir[3] = {left.m[12] - hand.m[12], left.m[13] - hand.m[13], left.m[14] - hand.m[14]};
-        const float hand_len = std::sqrt(hand_dir[0] * hand_dir[0] + hand_dir[1] * hand_dir[1] + hand_dir[2] * hand_dir[2]);
+        // Unaimed, the rifle lies level along the warrior's facing, so it never points
+        // up or down with the clip's hands. Aimed, it follows the aim line.
+        float hand_dir[3] = {root.m[8], 0.0f, root.m[10]};
+        const float hand_len = std::sqrt(hand_dir[0] * hand_dir[0] + hand_dir[2] * hand_dir[2]);
         if (hand_len > 1e-4f) {
-            for (float& c : hand_dir) c /= hand_len;
+            hand_dir[0] /= hand_len;
+            hand_dir[2] /= hand_len;
         } else {
             hand_dir[0] = 0.0f; hand_dir[1] = 0.0f; hand_dir[2] = 1.0f;
         }
@@ -791,6 +797,13 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
         impl_->muzzle[1] = m[1] * tip[0] + m[5] * tip[1] + m[9] * tip[2] + m[13];
         impl_->muzzle[2] = m[2] * tip[0] + m[6] * tip[1] + m[10] * tip[2] + m[14];
         impl_->muzzle_valid = true;
+        for (int c = 0; c < 3; ++c) {
+            impl_->rifle_points.hand[c] = hand.m[12 + c];
+            impl_->rifle_points.grip[c] = grip_world[c];
+            impl_->rifle_points.fore[c] = fore[c];
+            impl_->rifle_points.muzzle[c] = impl_->muzzle[c];
+        }
+        impl_->rifle_points_valid = true;
     }
     const Mat4 model = math::identity();
     glUniformMatrix4fv(impl_->toon_joints, kJoints, GL_FALSE, impl_->joint_matrices[0].m);
@@ -957,6 +970,11 @@ bool Renderer::projectPoint(const float p[3], float& ndc_x, float& ndc_y) const 
     ndc_x = (m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12]) / w;
     ndc_y = (m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13]) / w;
     return true;
+}
+
+bool Renderer::riflePoints(RiflePoints& out) const {
+    out = impl_->rifle_points;
+    return impl_->rifle_points_valid;
 }
 
 bool Renderer::muzzlePoint(float out[3]) const {

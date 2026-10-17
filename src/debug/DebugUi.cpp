@@ -335,6 +335,31 @@ void DebugUi::drawShotFeedback(const ShotFeedback& shot) {
     }
 }
 
+void DebugUi::drawRiflePoints(const RiflePointsOverlay& p) {
+    if (!p.visible) {
+        return;
+    }
+    ImDrawList* draw = ImGui::GetForegroundDrawList();
+    auto mark = [draw](bool ok, float x, float y, ImU32 colour, const char* label) {
+        if (!ok) {
+            return;
+        }
+        draw->AddCircleFilled(ImVec2(x, y), 6.0f, colour, 12);
+        draw->AddCircle(ImVec2(x, y), 6.0f, IM_COL32(0, 0, 0, 220), 12, 1.5f);
+        draw->AddText(ImVec2(x + 8.0f, y - 8.0f), colour, label);
+    };
+    if (p.grip_visible && p.fore_visible) {
+        draw->AddLine(ImVec2(p.grip_x, p.grip_y), ImVec2(p.fore_x, p.fore_y), IM_COL32(255, 255, 255, 180), 1.5f);
+    }
+    if (p.grip_visible && p.muzzle_visible) {
+        draw->AddLine(ImVec2(p.grip_x, p.grip_y), ImVec2(p.muzzle_x, p.muzzle_y), IM_COL32(255, 80, 80, 140), 1.5f);
+    }
+    mark(p.hand_visible, p.hand_x, p.hand_y, IM_COL32(255, 255, 255, 255), "hand");
+    mark(p.grip_visible, p.grip_x, p.grip_y, IM_COL32(90, 230, 90, 255), "grip");
+    mark(p.fore_visible, p.fore_x, p.fore_y, IM_COL32(90, 160, 255, 255), "fore");
+    mark(p.muzzle_visible, p.muzzle_x, p.muzzle_y, IM_COL32(255, 90, 90, 255), "muzzle");
+}
+
 void DebugUi::render() {
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

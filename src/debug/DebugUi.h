@@ -28,6 +28,16 @@ struct ShotFeedback {
     float impact_x = 0.0f, impact_y = 0.0f;
 };
 
+// Window positions of the rifle's hand, grip, fore-end and muzzle (for the F2 overlay).
+struct RiflePointsOverlay {
+    bool visible = false;
+    bool hand_visible = false, grip_visible = false, fore_visible = false, muzzle_visible = false;
+    float hand_x = 0.0f, hand_y = 0.0f;
+    float grip_x = 0.0f, grip_y = 0.0f;
+    float fore_x = 0.0f, fore_y = 0.0f;
+    float muzzle_x = 0.0f, muzzle_y = 0.0f;
+};
+
 class DebugUi {
 public:
     // Requires the GL context to be current; glsl_version is e.g. "#version 330".
@@ -38,6 +48,8 @@ public:
         const char* played_clip, float clip_time, float clip_duration);
     // The muzzle flash, tracer, impact spark and hit marker of the latest shot.
     void drawShotFeedback(const ShotFeedback& shot);
+    // Markers for the hand (white), grip (green), fore-end (blue) and muzzle (red), with the rifle's axis.
+    void drawRiflePoints(const RiflePointsOverlay& points);
     void render();
     bool handleEvent(const SDL_Event* event);
     bool wantsMouse() const;

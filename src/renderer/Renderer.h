@@ -18,6 +18,8 @@ namespace renderer {
 struct StyleSettings {
     // Debug view: draws the warrior's joints and bones over the model.
     bool show_skeleton = true;
+    // Debug overlay: markers at the right hand, the rifle grip, fore-end and muzzle (F2).
+    bool show_rifle_points = false;
     float light_x = -0.45f;
     float light_y = 0.80f;
     float light_z = 0.35f;
@@ -44,6 +46,14 @@ public:
     bool projectPoint(const float p[3], float& ndc_x, float& ndc_y) const;
     // The rifle's muzzle this frame. Returns false when no rifle is held.
     bool muzzlePoint(float out[3]) const;
+    // This frame's rifle points, in world space. Returns false when no rifle is held.
+    struct RiflePoints {
+        float hand[3];
+        float grip[3];
+        float fore[3];
+        float muzzle[3];
+    };
+    bool riflePoints(RiflePoints& out) const;
     void cleanup();
 
 private:
