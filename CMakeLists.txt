@@ -57,6 +57,7 @@ set(CHI_SOURCES
     src/world/World.cpp
     src/physics/Physics.cpp
     src/assets/AssetSystem.cpp
+    src/assets/CharacterModel.cpp
     src/debug/DebugUi.cpp
 )
 
@@ -91,6 +92,8 @@ if(EMSCRIPTEN)
     # Emscripten emits an HTML shell alongside the JS and WASM.
     set_target_properties(${CHI_APP_TARGET} PROPERTIES SUFFIX ".html")
     target_link_options(${CHI_APP_TARGET} PRIVATE --shell-file ${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html)
+    # Bundle the assets into the virtual filesystem at the same relative paths the game loads.
+    target_link_options(${CHI_APP_TARGET} PRIVATE --preload-file ${CMAKE_CURRENT_SOURCE_DIR}/assets@/assets)
 endif()
 
 if(ANDROID)
