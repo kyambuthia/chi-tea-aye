@@ -180,6 +180,7 @@ void appendJoint(ozz::animation::offline::RawSkeleton::Joint& out, int j, const 
 struct CharacterModel::SampleScratch {
     std::vector<ozz::math::SoaTransform> soa;
     std::vector<math::Mat4> locals;
+    std::vector<math::Mat4> upper;
     std::unique_ptr<ozz::animation::SamplingJob::Context> context;
     int context_tracks = -1;
 };
@@ -439,6 +440,9 @@ bool CharacterModel::load(const void* data, size_t size) {
     };
     hips_ = findJoint("Hips");
     root_ = findJoint("Root");
+    spine_[0] = findJoint("Spine");
+    spine_[1] = findJoint("Spine1");
+    spine_[2] = findJoint("Spine2");
     left_arm_[0] = findJoint("LeftArm");
     left_arm_[1] = findJoint("LeftForeArm");
     left_arm_[2] = findJoint("LeftHand");
@@ -547,15 +551,7 @@ float CharacterModel::clipDuration(const char* name) const {
     return 0.0f;
 }
 
-void CharacterModel::evaluatePose(const char* clip_name, float time_seconds, const math::Mat4& root,
-    const GroundHeightFn& ground, math::Mat4* out, const float* left_hand_goal) const {
-    for (int j = 0; j < kMaxJoints; ++j) {
-        out[j] = math::identity();
-    }
-    if (!skeleton_) {
-        return;
-    }
-
+bool CharacterModel::sampleLocals(const char* clip_name, float time_seconds, std::vector<math::Mat4>& locals) const {
     // Sample the clip with ozz.
     size_t clip = animation_names_.size();
     for (size_t a = 0; a < animation_names_.size(); ++a) {
@@ -565,7 +561,7 @@ void CharacterModel::evaluatePose(const char* clip_name, float time_seconds, con
         }
     }
     if (clip == animation_names_.size()) {
-        return;
+        return false;
     }
     const ozz::animation::Animation& animation = *animations_[clip];
     const float duration = animation.duration();
@@ -588,11 +584,10 @@ void CharacterModel::evaluatePose(const char* clip_name, float time_seconds, con
     sampling.ratio = duration > 0.0f ? t / duration : 0.0f;
     sampling.output = ozz::span<ozz::math::SoaTransform>(soa.data(), soa.size());
     if (!sampling.Run()) {
-        return;
+        return false;
     }
 
     // Unpack the sampled locals, one joint at a time, in depth-first order.
-    std::vector<math::Mat4>& locals = scratch.locals;
     locals.resize(joint_count);
     for (int k = 0; k < joint_count; ++k) {
         const ozz::math::SoaTransform& s = soa[k / 4];
@@ -613,6 +608,55 @@ void CharacterModel::evaluatePose(const char* clip_name, float time_seconds, con
         const float s3[3] = {sx[lane], sy[lane], sz[lane]};
         locals[dfs_joint_[k]] = math::fromTrs(t3, r4, s3);
     }
+    return true;
+}
+
+bool CharacterModel::isDescendant(int joint, int ancestor) const {
+    for (int j = joint; j >= 0; j = joint_parent_[j]) {
+        if (j == ancestor) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void CharacterModel::evaluatePose(const PoseRequest& request, const math::Mat4& root, const GroundHeightFn& ground,
+    math::Mat4* out) const {
+    for (int j = 0; j < kMaxJoints; ++j) {
+        out[j] = math::identity();
+    }
+    if (!skeleton_) {
+        return;
+    }
+
+    if (!scratch_) {
+        scratch_ = std::make_unique<SampleScratch>();
+    }
+    SampleScratch& scratch = *scratch_;
+    std::vector<math::Mat4>& locals = scratch.locals;
+    if (!sampleLocals(request.clip, request.time, locals)) {
+        return;
+    }
+    const int joint_count = skeleton_->num_joints();
+
+    // Upper-body layer: from the spine up (arms, head), the upper clip replaces the base.
+    if (request.upper_clip != nullptr && spine_[0] >= 0 && sampleLocals(request.upper_clip, request.upper_time, scratch.upper)) {
+        for (int j = 0; j < joint_count; ++j) {
+            if (isDescendant(j, spine_[0])) {
+                locals[j] = scratch.upper[j];
+            }
+        }
+    }
+
+    // Spine bend, spread over the three spine segments.
+    if (request.spine_bend != 0.0f) {
+        const float each = request.spine_bend / 3.0f;
+        for (int segment = 0; segment < 3; ++segment) {
+            if (spine_[segment] >= 0) {
+                locals[spine_[segment]] = math::multiply(locals[spine_[segment]], math::rotationX(each));
+            }
+        }
+    }
 
     // The root path is not applied here: the game places the character itself.
     // Keep the Root joint at its bind translation so the body stays in place.
@@ -626,13 +670,23 @@ void CharacterModel::evaluatePose(const char* clip_name, float time_seconds, con
         applyFootIk(locals, root, ground);
     }
 
-    if (left_hand_goal != nullptr && left_arm_[0] >= 0) {
-        solveTwoBone(locals, root, left_arm_[0], left_arm_[1], left_arm_[2], left_hand_goal);
+    if (request.left_hand_goal != nullptr && left_arm_[0] >= 0) {
+        solveTwoBone(locals, root, left_arm_[0], left_arm_[1], left_arm_[2], request.left_hand_goal);
     }
 
     for (int j = 0; j < joint_count && j < kMaxJoints; ++j) {
         out[j] = math::multiply(jointModel(j, joint_parent_, locals, root), inverse_bind_[j]);
     }
+}
+
+
+void CharacterModel::evaluatePose(const char* clip_name, float time_seconds, const math::Mat4& root,
+    const GroundHeightFn& ground, math::Mat4* out, const float* left_hand_goal) const {
+    PoseRequest request;
+    request.clip = clip_name;
+    request.time = time_seconds;
+    request.left_hand_goal = left_hand_goal;
+    evaluatePose(request, root, ground, out);
 }
 
 // Two-bone IK: moves the end joint to goal, bending the middle joint on the side

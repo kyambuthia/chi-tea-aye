@@ -74,6 +74,19 @@ public:
     // the pelvis drops when a foot needs to reach down. Unused slots are identity.
     // With left_hand_goal (model-space world point), the left arm reaches it by two-bone
     // IK: used to put the left hand on a held weapon's fore-end.
+    // What to pose: a base clip, an optional upper-body layer, and a few adjustments.
+    struct PoseRequest {
+        const char* clip = "Idle";
+        float time = 0.0f;
+        // Upper-body layer: from the spine up (arms, head), this clip replaces the base clip.
+        const char* upper_clip = nullptr;
+        float upper_time = 0.0f;
+        // Bend of the spine in radians; positive leans forward.
+        float spine_bend = 0.0f;
+        // Model-space point the left hand reaches for (two-bone IK), or nullptr.
+        const float* left_hand_goal = nullptr;
+    };
+    void evaluatePose(const PoseRequest& request, const math::Mat4& root, const GroundHeightFn& ground, math::Mat4* out) const;
     void evaluatePose(const char* clip_name, float time_seconds, const math::Mat4& root,
         const GroundHeightFn& ground, math::Mat4* out, const float* left_hand_goal = nullptr) const;
 
@@ -90,6 +103,10 @@ private:
     };
 
     void applyFootIk(std::vector<math::Mat4>& locals, const math::Mat4& root, const GroundHeightFn& ground) const;
+    // Samples one clip into local transforms, by joint index. False when the clip is missing.
+    bool sampleLocals(const char* clip_name, float time_seconds, std::vector<math::Mat4>& locals) const;
+    // True when joint is ancestor or below it.
+    bool isDescendant(int joint, int ancestor) const;
     void solveTwoBone(std::vector<math::Mat4>& locals, const math::Mat4& root, int up, int mid, int end,
         const float goal[3]) const;
 
@@ -119,6 +136,7 @@ private:
     int hips_ = -1;
     int root_ = -1;  // the Root joint: its translation is the clip's root path
     int left_arm_[3] = {-1, -1, -1};  // upper arm, forearm, hand
+    int spine_[3] = {-1, -1, -1};     // spine segments, base to top
     bool has_feet_ = false;
     float front_yaw_ = 0.0f;
 };
