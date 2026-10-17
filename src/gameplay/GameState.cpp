@@ -26,6 +26,11 @@ constexpr float kFireBuffer = 0.15f;
 // Camera kick per shot, in radians, and how fast it settles.
 constexpr float kRecoilKick = 0.012f;
 constexpr float kRecoilSettle = 12.0f;
+// Sight view: the eye at the right shoulder, the look point this far ahead along the aim.
+constexpr float kSightHeight = 1.42f;
+constexpr float kSightSide = 0.12f;
+constexpr float kSightBack = 0.25f;
+constexpr float kSightRange = 20.0f;
 // Lens distance kept between the camera and a wall it is pulled in front of.
 constexpr float kCameraWallMargin = 0.3f;
 constexpr float kTurnRate = 10.0f;             // radians per second
@@ -352,18 +357,54 @@ float GameState::clearCameraDistance(float wanted_distance) const {
     return std::fmax(0.6f, wall - kCameraWallMargin);
 }
 
-Ray GameState::cameraRay() const {
-    // The same eye position the renderer uses, including the aim pull-in and walls.
-    const float aim = weapon_.aim();
-    const float distance = clearCameraDistance(camera_distance_ * (1.0f - 0.35f * aim));
+void GameState::cameraView(float eye[3], float look[3]) const {
     const float pitch = cameraPitch();
+    const float az = camera_azimuth_;
+
+    // Orbit: look at the target, with the eye behind it at the camera distance,
+    // pulled in by walls.
+    const float distance = clearCameraDistance(camera_distance_);
     const float horizontal = distance * std::cos(pitch);
-    const float look[3] = {camera_target_x_, look_height_, camera_target_z_};
-    const float eye[3] = {
-        look[0] + horizontal * std::sin(camera_azimuth_),
-        look[1] + distance * std::sin(pitch),
-        look[2] + horizontal * std::cos(camera_azimuth_),
+    const float orbit_look[3] = {camera_target_x_, look_height_, camera_target_z_};
+    const float orbit_eye[3] = {
+        orbit_look[0] + horizontal * std::sin(az),
+        orbit_look[1] + distance * std::sin(pitch),
+        orbit_look[2] + horizontal * std::cos(az),
     };
+
+    // Sight: the eye at the right shoulder, a little behind it, looking along the aim.
+    // The aim direction is the view's direction, so the rifle and the shot follow it.
+    const float forward[3] = {-std::sin(az) * std::cos(pitch), -std::sin(pitch), -std::cos(az) * std::cos(pitch)};
+    const float right[3] = {std::cos(az), 0.0f, -std::sin(az)};
+    const float shoulder[3] = {
+        player_x_ + right[0] * kSightSide,
+        kSightHeight,
+        player_z_ + right[2] * kSightSide,
+    };
+    const float sight_eye[3] = {
+        shoulder[0] - forward[0] * kSightBack,
+        shoulder[1] - forward[1] * kSightBack,
+        shoulder[2] - forward[2] * kSightBack,
+    };
+    const float sight_look[3] = {
+        shoulder[0] + forward[0] * kSightRange,
+        shoulder[1] + forward[1] * kSightRange,
+        shoulder[2] + forward[2] * kSightRange,
+    };
+
+    // Blend from the orbit view to the sight view as the rifle comes up.
+    const float w = weapon_.active() == WeaponSlot::Rifle ? weapon_.aim() : 0.0f;
+    for (int c = 0; c < 3; ++c) {
+        eye[c] = orbit_eye[c] + (sight_eye[c] - orbit_eye[c]) * w;
+        look[c] = orbit_look[c] + (sight_look[c] - orbit_look[c]) * w;
+    }
+}
+
+Ray GameState::cameraRay() const {
+    // The same eye and look point the renderer uses, so shots follow the view.
+    float eye[3];
+    float look[3];
+    cameraView(eye, look);
     Ray ray{};
     float length = 0.0f;
     for (int c = 0; c < 3; ++c) {

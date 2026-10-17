@@ -630,19 +630,16 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     const float pz = gameplay.playerZ();
 
     // Third-person camera: looks at the upper body from behind and above.
-    const float target_x = gameplay.cameraTargetX();
-    const float target_z = gameplay.cameraTargetZ();
-    const float target_y = gameplay.cameraLookHeight();
-    const float azimuth = gameplay.cameraAzimuth();
-    const float pitch = gameplay.cameraPitch();
-    // Aiming narrows the view from 60 to 30 degrees and brings the camera a third closer.
+    // Orbit view, or the sight view from the right shoulder while aimed (see cameraView).
+    float eye[3];
+    float look[3];
+    gameplay.cameraView(eye, look);
+    const float eye_x = eye[0];
+    const float eye_y = eye[1];
+    const float eye_z = eye[2];
+    const Mat4 view = math::lookAt(eye_x, eye_y, eye_z, look[0], look[1], look[2]);
+    // Aiming narrows the view from 60 to 30 degrees.
     const float aim = gameplay.weapon().aim();
-    const float distance = gameplay.clearCameraDistance(gameplay.cameraDistance() * (1.0f - 0.35f * aim));
-    const float horizontal = distance * std::cos(pitch);
-    const float eye_x = target_x + horizontal * std::sin(azimuth);
-    const float eye_y = target_y + distance * std::sin(pitch);
-    const float eye_z = target_z + horizontal * std::cos(azimuth);
-    const Mat4 view = math::lookAt(eye_x, eye_y, eye_z, target_x, target_y, target_z);
     const float fov = (60.0f - 30.0f * aim) * kPi / 180.0f;
     const Mat4 view_projection = math::multiply(perspectiveFor(framebuffer_width, framebuffer_height, fov), view);
     impl_->last_view_projection = view_projection;

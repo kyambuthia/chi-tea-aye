@@ -67,6 +67,10 @@ public:
     // The ray from the camera through the centre of the view: where a shot goes.
     Ray cameraRay() const;
 
+    // The camera's eye and look point. Orbiting, the eye is behind the warrior. Aimed,
+    // the eye moves to the right shoulder and looks down the rifle's aim line.
+    void cameraView(float eye[3], float look[3]) const;
+
     // Third-person camera, already smoothed. The eye sits at the target plus
     // distance along the azimuth, raised by the pitch.
     float cameraTargetX() const;
