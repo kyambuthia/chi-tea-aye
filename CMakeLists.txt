@@ -121,6 +121,12 @@ elseif(NOT CHI_GLES)
     target_link_libraries(${CHI_APP_TARGET} PRIVATE OpenGL::GL)
 endif()
 
+# Locomotion preprocessing: foot contacts and strides from the clips.
+add_library(chi-locomotion STATIC locomotion/Contacts.cpp)
+target_include_directories(chi-locomotion PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+add_executable(locomotion_preprocess locomotion/preprocess.cpp)
+target_link_libraries(locomotion_preprocess PRIVATE chi-character chi-locomotion)
+
 # Unit-style checks, built and run from the repository root.
 option(CHI_BUILD_TESTS "Build the character and terrain checks" ON)
 if(CHI_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)

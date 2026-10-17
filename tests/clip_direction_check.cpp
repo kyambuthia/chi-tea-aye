@@ -52,12 +52,17 @@ Point pelvis(const std::vector<Point>& v) {
     return c;
 }
 
-// Mean of a foot's lowest fifth of vertices. side +1 is the warrior's left (+X),
-// -1 is the right (-X). Each foot is tracked on its own, so the two never mix.
-Point footSole(const std::vector<Point>& v, int side) {
+// Mean of a foot's lowest fifth of vertices. The foot is identified by its skin
+// joints, not by position: in a strafe the feet cross the midline.
+Point footSole(const std::vector<Point>& verts, const std::vector<int>& dominant, const std::vector<int>& foot_joints) {
     std::vector<Point> foot;
-    for (const Point& p : v) {
-        if (p.y < 0.25f && p.x * side > 0.05f) foot.push_back(p);
+    for (size_t i = 0; i < verts.size(); ++i) {
+        for (int j : foot_joints) {
+            if (dominant[i] == j) {
+                foot.push_back(verts[i]);
+                break;
+            }
+        }
     }
     std::sort(foot.begin(), foot.end(), [](const Point& a, const Point& b) { return a.y < b.y; });
     Point c{0, 0, 0};
@@ -90,12 +95,23 @@ int main() {
         {"StrafeRight", 0.967f, -1.0f, 0.0f},
     };
 
+    // Each foot's skin joints: the ankle and toes of that side.
+    const std::vector<int> feet[2] = {
+        {model.jointIndex("LeftFoot"), model.jointIndex("LeftToeBase")},
+        {model.jointIndex("RightFoot"), model.jointIndex("RightToeBase")},
+    };
     int failures = 0;
     std::vector<math::Mat4> joints(assets::kMaxJoints);
     const math::Mat4 root = math::identity();
     for (const Case& c : cases) {
+        const float duration = model.clipDuration(c.clip);
+        if (duration <= 0.0f) {
+            std::printf("%-14s missing: WRONG\n", c.clip);
+            ++failures;
+            continue;
+        }
         const int frames = 60;
-        const float dt = c.duration / frames;
+        const float dt = duration / frames;
         // Per foot: relative position (sole minus pelvis) and height, for each frame.
         std::vector<Point> rel[2];
         std::vector<float> height[2];
@@ -104,13 +120,17 @@ int main() {
             height[side].resize(frames + 1);
         }
         for (int f = 0; f <= frames; ++f) {
-            const float t = c.duration * f / frames;
+            const float t = duration * f / frames;
             model.evaluatePose(c.clip, t, root, {}, joints.data());
             const std::vector<Point> verts = skin(model, joints.data());
             const Point body = pelvis(verts);
+            std::vector<int> dominant(verts.size());
+            for (size_t i = 0; i < verts.size(); ++i) {
+                const auto& v = model.mesh().vertices[i];
+                dominant[i] = static_cast<int>(v.weights[0] >= v.weights[1] ? v.joints[0] : v.joints[1]);
+            }
             for (int side = 0; side < 2; ++side) {
-                const int sign = side == 0 ? 1 : -1;
-                const Point sole = footSole(verts, sign);
+                const Point sole = footSole(verts, dominant, feet[side]);
                 rel[side][f] = {sole.x - body.x, sole.y - body.y, sole.z - body.z};
                 height[side][f] = sole.y;
             }

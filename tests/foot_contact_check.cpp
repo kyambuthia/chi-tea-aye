@@ -84,6 +84,10 @@ int main() {
     int failures = 0;
     std::printf("%-14s %-24s %-24s\n", "clip", "IK off (mean/worst m)", "IK on (mean/worst m)");
     for (const ClipCase& c : clips) {
+        if (model.clipDuration(c.name) <= 0.0f) {
+            std::printf("%-14s not in the asset, skipped\n", c.name);
+            continue;
+        }
         const Stats off = measure(model, world, c.name, c.duration, false);
         const Stats on = measure(model, world, c.name, c.duration, true);
         std::printf("%-14s %.3f / %.3f           %.3f / %.3f  (frames within 3 cm: %d/%d)\n",

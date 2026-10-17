@@ -48,6 +48,11 @@ public:
 
     const CharacterMesh& mesh() const;
     bool hasClip(const char* name) const;
+    // Skin joint index of the named bone, or -1 if the rig has no such bone.
+    int jointIndex(const char* name) const;
+
+    // Length of the named clip in seconds, or 0 if the clip is not present.
+    float clipDuration(const char* name) const;
 
     // Heading (radians about +Y) of the mesh's front at zero rotation. The mesh faces +Z.
     float frontYaw() const;
@@ -94,6 +99,7 @@ private:
 
     FootChain feet_[2];
     int hips_ = -1;
+    int root_ = -1;  // the Root joint: its translation is the clip's root path
     bool has_feet_ = false;
     float front_yaw_ = 0.0f;
 };

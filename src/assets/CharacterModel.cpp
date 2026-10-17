@@ -430,6 +430,7 @@ bool CharacterModel::load(const void* data, size_t size) {
         return -1;
     };
     hips_ = findJoint("Hips");
+    root_ = findJoint("Root");
     const char* sides[2][3] = {{"LeftUpLeg", "LeftLeg", "LeftFoot"}, {"RightUpLeg", "RightLeg", "RightFoot"}};
     const char* toes[2] = {"LeftToeBase", "RightToeBase"};
     has_feet_ = hips_ >= 0;
@@ -484,6 +485,7 @@ void CharacterModel::cleanup() {
     front_yaw_ = 0.0f;
     has_feet_ = false;
     hips_ = -1;
+    root_ = -1;
 }
 
 const CharacterMesh& CharacterModel::mesh() const {
@@ -501,6 +503,25 @@ bool CharacterModel::hasClip(const char* name) const {
         }
     }
     return false;
+}
+
+int CharacterModel::jointIndex(const char* name) const {
+    for (size_t j = 0; j < joint_nodes_.size(); ++j) {
+        const auto* node = static_cast<const cgltf_node*>(joint_nodes_[j]);
+        if (node->name != nullptr && std::strcmp(node->name, name) == 0) {
+            return static_cast<int>(j);
+        }
+    }
+    return -1;
+}
+
+float CharacterModel::clipDuration(const char* name) const {
+    for (size_t a = 0; a < animation_names_.size(); ++a) {
+        if (animation_names_[a] == name) {
+            return animations_[a]->duration();
+        }
+    }
+    return 0.0f;
 }
 
 void CharacterModel::evaluatePose(const char* clip_name, float time_seconds, const math::Mat4& root,
@@ -559,6 +580,14 @@ void CharacterModel::evaluatePose(const char* clip_name, float time_seconds, con
         const float r4[4] = {qx[lane], qy[lane], qz[lane], qw[lane]};
         const float s3[3] = {sx[lane], sy[lane], sz[lane]};
         locals[dfs_joint_[k]] = math::fromTrs(t3, r4, s3);
+    }
+
+    // The root path is not applied here: the game places the character itself.
+    // Keep the Root joint at its bind translation so the body stays in place.
+    if (root_ >= 0) {
+        locals[root_].m[12] = bind_local_[root_].m[12];
+        locals[root_].m[13] = bind_local_[root_].m[13];
+        locals[root_].m[14] = bind_local_[root_].m[14];
     }
 
     if (ground && has_feet_) {
