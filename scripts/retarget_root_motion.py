@@ -144,6 +144,8 @@ def main():
         ('StrafeLeft', 'left strafe walking.fbx', True),
         ('StrafeRight', 'right strafe walking.fbx', True),
         ('WalkBackwards', 'walking_backwards.fbx', True),
+        # One-shot: played once for a fist attack.
+        ('PunchCombo', 'punch_combo.fbx', False),
     ]
     actions, report = [], {'clips': {}}
     for title, filename, loop in clips:
