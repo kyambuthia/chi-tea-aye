@@ -243,8 +243,6 @@ void DebugUi::draw(const gameplay::GameState& gameplay, const app::InputState& i
 
     sectionHeader(PanelIcon::Sliders, "Comic Shader");
     ImGui::SliderFloat("Bands", &style.toon_bands, 2.0f, 8.0f, "%.0f");
-    ImGui::SliderFloat("Outline", &style.outline_thickness, 0.0f, 0.12f, "%.3f");
-    ImGui::ColorEdit3("Ink", style.outline_color, ImGuiColorEditFlags_NoInputs);
     ImGui::Checkbox("Halftone", &style.halftone_enabled);
     ImGui::SliderFloat("Dot strength", &style.halftone_intensity, 0.0f, 0.6f);
     ImGui::SliderFloat("Dot scale", &style.halftone_scale, 3.0f, 24.0f);
@@ -259,6 +257,10 @@ void DebugUi::render() {
 
 bool DebugUi::handleEvent(const SDL_Event* event) {
     return ImGui_ImplSDL3_ProcessEvent(event);
+}
+
+bool DebugUi::wantsMouse() const {
+    return ImGui::GetIO().WantCaptureMouse;
 }
 
 void DebugUi::cleanup() {

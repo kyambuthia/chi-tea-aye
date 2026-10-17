@@ -36,7 +36,10 @@
     X(void, glEnableVertexAttribArray, (GLuint index)) \
     X(void, glVertexAttribPointer, (GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const void* pointer)) \
     X(void, glDeleteProgram, (GLuint program)) \
-    X(void, glDrawElements, (GLenum mode, GLsizei count, GLenum type, const void* indices))
+    X(void, glDrawElements, (GLenum mode, GLsizei count, GLenum type, const void* indices)) \
+    X(void, glActiveTexture, (GLenum texture)) \
+    X(void, glGenerateMipmap, (GLenum target)) \
+    X(void, glUniform1i, (GLint location, GLint v0))
 
 #define CHI_GL_DECLARE(ret, name, args) extern ret(APIENTRY* chi_##name) args;
 CHI_GL_FUNCTIONS(CHI_GL_DECLARE)

@@ -75,11 +75,13 @@ public:
             return SDL_APP_FAILURE;
         }
 
-        assets_.init();
+        if (!assets_.init()) {
+            return SDL_APP_FAILURE;
+        }
         world_.init();
         physics_.init();
         gameplay_.init();
-        renderer_.init();
+        renderer_.init(assets_.character());
         debug_ui_.init(window_, gl_context_, kGlslVersion);
 
         last_ticks_ns_ = SDL_GetTicksNS();
@@ -94,6 +96,10 @@ public:
 
         ++frame_count_;
         gameplay_.update(input_, physics_, world_, dt);
+        // Orbit and zoom are per-frame deltas; the drag state persists.
+        input_.look_dx = 0.0f;
+        input_.look_dy = 0.0f;
+        input_.zoom_steps = 0.0f;
 
         debug_ui_.beginFrame();
         debug_ui_.draw(gameplay_, input_, renderer_.styleSettings(), frame_count_, dt);
@@ -138,6 +144,27 @@ public:
             case SDL_EVENT_MOUSE_MOTION:
                 input_.mouse.x = e->motion.x;
                 input_.mouse.y = e->motion.y;
+                // Touches also produce mouse events; the touch path handles those.
+                if (input_.orbit_drag && e->motion.which != SDL_TOUCH_MOUSEID) {
+                    input_.look_dx += e->motion.xrel;
+                    input_.look_dy += e->motion.yrel;
+                }
+                break;
+            case SDL_EVENT_MOUSE_BUTTON_DOWN:
+                if (e->button.button == SDL_BUTTON_LEFT && e->button.which != SDL_TOUCH_MOUSEID &&
+                    !debug_ui_.wantsMouse()) {
+                    input_.orbit_drag = true;
+                }
+                break;
+            case SDL_EVENT_MOUSE_BUTTON_UP:
+                if (e->button.button == SDL_BUTTON_LEFT) {
+                    input_.orbit_drag = false;
+                }
+                break;
+            case SDL_EVENT_MOUSE_WHEEL:
+                if (!debug_ui_.wantsMouse()) {
+                    input_.zoom_steps += e->wheel.y;
+                }
                 break;
             case SDL_EVENT_FINGER_DOWN:
                 onFingerDown(e->tfinger);
@@ -189,6 +216,10 @@ private:
             case SDL_SCANCODE_D:
                 input_.keys.d = down;
                 break;
+            case SDL_SCANCODE_LSHIFT:
+            case SDL_SCANCODE_RSHIFT:
+                input_.keys.shift = down;
+                break;
             default:
                 break;
         }
@@ -204,7 +235,15 @@ private:
     }
 
     void onFingerDown(const SDL_TouchFingerEvent& f) {
-        if (stick_active_ || f.x >= 0.5f) {
+        // Right half drags the camera; left half is the movement stick.
+        if (f.x >= 0.5f) {
+            if (!camera_active_) {
+                camera_active_ = true;
+                camera_finger_ = f.fingerID;
+            }
+            return;
+        }
+        if (stick_active_) {
             return;
         }
         stick_active_ = true;
@@ -213,6 +252,14 @@ private:
     }
 
     void onFingerMotion(const SDL_TouchFingerEvent& f) {
+        if (camera_active_ && f.fingerID == camera_finger_) {
+            int w = 1;
+            int h = 1;
+            SDL_GetWindowSize(window_, &w, &h);
+            input_.look_dx += f.dx * static_cast<float>(w);
+            input_.look_dy += f.dy * static_cast<float>(h);
+            return;
+        }
         if (!stick_active_ || f.fingerID != stick_finger_) {
             return;
         }
@@ -234,6 +281,10 @@ private:
     }
 
     void onFingerUp(const SDL_TouchFingerEvent& f) {
+        if (camera_active_ && f.fingerID == camera_finger_) {
+            camera_active_ = false;
+            return;
+        }
         if (!stick_active_ || f.fingerID != stick_finger_) {
             return;
         }
@@ -256,6 +307,8 @@ private:
     uint64_t frame_count_ = 0;
     uint64_t last_ticks_ns_ = 0;
     bool stick_active_ = false;
+    bool camera_active_ = false;
+    SDL_FingerID camera_finger_ = 0;
     SDL_FingerID stick_finger_ = 0;
     float stick_origin_x_ = 0.0f;
     float stick_origin_y_ = 0.0f;

@@ -12,6 +12,15 @@ Minimal C++20 SDL3 game prototype.
 - Dear ImGui debug panel shows FPS, frame count, mouse position, and key state.
 - CMake build on Linux.
 
+## Controls
+
+- WASD: move. Hold Shift to run.
+- Mouse: hold the left button and drag to orbit the camera; scroll to zoom.
+- Touch: drag the left half of the screen to move; drag the right half to orbit.
+
+The warrior model is `assets/characters/african_warrior.glb`. It is loaded from the
+working directory on desktop and bundled into the web build.
+
 ## Build
 
 SDL3 and Dear ImGui are git submodules. Clone with `--recurse-submodules`, or run:

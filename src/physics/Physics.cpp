@@ -10,7 +10,8 @@ void Physics::init() {}
 void Physics::integratePlayer(const app::InputState& input, const world::World& world, float delta_time, float& x, float& y) const {
     (void)world;
 
-    constexpr float speed = 1.5f;
+    // Matched to the planted-foot speed of the Walk and Run clips so feet do not slide.
+    const float speed = input.keys.shift ? 4.0f : 1.65f;
     float dx = 0.0f;
     float dy = 0.0f;
 

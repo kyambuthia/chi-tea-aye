@@ -31,4 +31,7 @@
 #define glVertexAttribPointer chi_glVertexAttribPointer
 #define glDeleteProgram chi_glDeleteProgram
 #define glDrawElements chi_glDrawElements
+#define glActiveTexture chi_glActiveTexture
+#define glGenerateMipmap chi_glGenerateMipmap
+#define glUniform1i chi_glUniform1i
 #endif

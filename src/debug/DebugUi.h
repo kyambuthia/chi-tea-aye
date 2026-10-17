@@ -26,6 +26,7 @@ public:
     void draw(const gameplay::GameState& gameplay, const app::InputState& input, renderer::StyleSettings& style, uint64_t frame_count, float delta_time);
     void render();
     bool handleEvent(const SDL_Event* event);
+    bool wantsMouse() const;
     void cleanup();
 };
 

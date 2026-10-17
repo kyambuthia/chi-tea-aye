@@ -1,168 +1,29 @@
 #include "renderer/Renderer.h"
 
+#include "assets/CharacterModel.h"
+#include "assets/MeshVertex.h"
 #include "gameplay/GameState.h"
+#include "math/Mat4.h"
 #include "renderer/GlApi.h"
 
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <new>
+#include <string>
+#include <vector>
 
 namespace renderer {
 namespace {
 
-struct Vertex {
-    float position[3];
-    float normal[3];
-    float color[4];
-};
+using assets::MeshVertex;
+using math::Mat4;
 
-struct Mat4 {
-    float m[16];
-};
-
-// Uniform blocks are split per stage: sokol requires each stage to declare
-// the blocks it reads (Metal in particular), so fragment inputs get their own
-// block at slot 1.
-struct ToonVsUniforms {
-    Mat4 mvp;
-    Mat4 model;
-};
-
-struct ToonFsUniforms {
-    float light_dir_bands[4];
-    float style[4];
-    float surface[4];
-};
-
-struct OutlineVsUniforms {
-    Mat4 mvp;
-    float outline_thickness[4];
-};
-
-struct OutlineFsUniforms {
-    float outline_color[4];
-};
-
-constexpr Vertex kVertices[] = {
-    {{-0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.93f, 0.18f, 0.20f, 1.0f}},
-    {{0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.93f, 0.18f, 0.20f, 1.0f}},
-    {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.93f, 0.18f, 0.20f, 1.0f}},
-    {{-0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.93f, 0.18f, 0.20f, 1.0f}},
-    {{-0.5f, -0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.10f, 0.64f, 0.92f, 1.0f}},
-    {{0.5f, -0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.10f, 0.64f, 0.92f, 1.0f}},
-    {{0.5f, 0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.10f, 0.64f, 0.92f, 1.0f}},
-    {{-0.5f, 0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.10f, 0.64f, 0.92f, 1.0f}},
-    {{-0.5f, -0.5f, -0.5f}, {-1.0f, 0.0f, 0.0f}, {0.98f, 0.80f, 0.18f, 1.0f}},
-    {{-0.5f, 0.5f, -0.5f}, {-1.0f, 0.0f, 0.0f}, {0.98f, 0.80f, 0.18f, 1.0f}},
-    {{-0.5f, 0.5f, 0.5f}, {-1.0f, 0.0f, 0.0f}, {0.98f, 0.80f, 0.18f, 1.0f}},
-    {{-0.5f, -0.5f, 0.5f}, {-1.0f, 0.0f, 0.0f}, {0.98f, 0.80f, 0.18f, 1.0f}},
-    {{0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.48f, 0.80f, 0.28f, 1.0f}},
-    {{0.5f, 0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.48f, 0.80f, 0.28f, 1.0f}},
-    {{0.5f, 0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}, {0.48f, 0.80f, 0.28f, 1.0f}},
-    {{0.5f, -0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}, {0.48f, 0.80f, 0.28f, 1.0f}},
-    {{-0.5f, 0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.95f, 0.38f, 0.16f, 1.0f}},
-    {{0.5f, 0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.95f, 0.38f, 0.16f, 1.0f}},
-    {{0.5f, 0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}, {0.95f, 0.38f, 0.16f, 1.0f}},
-    {{-0.5f, 0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}, {0.95f, 0.38f, 0.16f, 1.0f}},
-    {{-0.5f, -0.5f, -0.5f}, {0.0f, -1.0f, 0.0f}, {0.64f, 0.82f, 0.38f, 1.0f}},
-    {{0.5f, -0.5f, -0.5f}, {0.0f, -1.0f, 0.0f}, {0.64f, 0.82f, 0.38f, 1.0f}},
-    {{0.5f, -0.5f, 0.5f}, {0.0f, -1.0f, 0.0f}, {0.64f, 0.82f, 0.38f, 1.0f}},
-    {{-0.5f, -0.5f, 0.5f}, {0.0f, -1.0f, 0.0f}, {0.64f, 0.82f, 0.38f, 1.0f}},
-    {{-6.0f, -0.52f, -6.0f}, {0.0f, 1.0f, 0.0f}, {0.11f, 0.12f, 0.14f, 1.0f}},
-    {{6.0f, -0.52f, -6.0f}, {0.0f, 1.0f, 0.0f}, {0.11f, 0.12f, 0.14f, 1.0f}},
-    {{6.0f, -0.52f, 6.0f}, {0.0f, 1.0f, 0.0f}, {0.10f, 0.11f, 0.13f, 1.0f}},
-    {{-6.0f, -0.52f, 6.0f}, {0.0f, 1.0f, 0.0f}, {0.10f, 0.11f, 0.13f, 1.0f}},
-};
-
-constexpr uint16_t kCubeIndices[] = {
-    0, 1, 2, 0, 2, 3,
-    4, 6, 5, 4, 7, 6,
-    8, 9, 10, 8, 10, 11,
-    12, 15, 14, 12, 14, 13,
-    16, 17, 18, 16, 18, 19,
-    20, 23, 22, 20, 22, 21,
-};
-
-constexpr uint16_t kGroundIndices[] = {24, 25, 26, 24, 26, 27};
 constexpr float kPi = 3.14159265358979323846f;
+constexpr float kGroundY = -0.52f;
+constexpr int kJoints = assets::kMaxJoints;
 
-Mat4 identity() {
-    return Mat4{{1.0f, 0.0f, 0.0f, 0.0f,
-                 0.0f, 1.0f, 0.0f, 0.0f,
-                 0.0f, 0.0f, 1.0f, 0.0f,
-                 0.0f, 0.0f, 0.0f, 1.0f}};
-}
-
-Mat4 multiply(const Mat4& a, const Mat4& b) {
-    Mat4 out{};
-    for (int col = 0; col < 4; ++col) {
-        for (int row = 0; row < 4; ++row) {
-            out.m[col * 4 + row] =
-                a.m[0 * 4 + row] * b.m[col * 4 + 0] +
-                a.m[1 * 4 + row] * b.m[col * 4 + 1] +
-                a.m[2 * 4 + row] * b.m[col * 4 + 2] +
-                a.m[3 * 4 + row] * b.m[col * 4 + 3];
-        }
-    }
-    return out;
-}
-
-Mat4 translation(float x, float y, float z) {
-    Mat4 out = identity();
-    out.m[12] = x;
-    out.m[13] = y;
-    out.m[14] = z;
-    return out;
-}
-
-Mat4 perspective(float fovy_radians, float aspect, float near_z, float far_z) {
-    const float f = 1.0f / std::tan(fovy_radians * 0.5f);
-    Mat4 out{};
-    out.m[0] = f / aspect;
-    out.m[5] = f;
-    out.m[10] = (far_z + near_z) / (near_z - far_z);
-    out.m[11] = -1.0f;
-    out.m[14] = (2.0f * far_z * near_z) / (near_z - far_z);
-    return out;
-}
-
-Mat4 lookAt(float eye_x, float eye_y, float eye_z, float target_x, float target_y, float target_z) {
-    float fx = target_x - eye_x;
-    float fy = target_y - eye_y;
-    float fz = target_z - eye_z;
-    const float f_len = std::sqrt((fx * fx) + (fy * fy) + (fz * fz));
-    fx /= f_len;
-    fy /= f_len;
-    fz /= f_len;
-
-    float sx = -fz;
-    float sy = 0.0f;
-    float sz = fx;
-    const float s_len = std::sqrt((sx * sx) + (sz * sz));
-    sx /= s_len;
-    sz /= s_len;
-
-    const float ux = sy * fz - sz * fy;
-    const float uy = sz * fx - sx * fz;
-    const float uz = sx * fy - sy * fx;
-
-    Mat4 out = identity();
-    out.m[0] = sx;
-    out.m[4] = sy;
-    out.m[8] = sz;
-    out.m[1] = ux;
-    out.m[5] = uy;
-    out.m[9] = uz;
-    out.m[2] = -fx;
-    out.m[6] = -fy;
-    out.m[10] = -fz;
-    out.m[12] = -((sx * eye_x) + (sy * eye_y) + (sz * eye_z));
-    out.m[13] = -((ux * eye_x) + (uy * eye_y) + (uz * eye_z));
-    out.m[14] = (fx * eye_x) + (fy * eye_y) + (fz * eye_z);
-    return out;
-}
+static_assert(kJoints == 32, "the skinning shader declares joints[32]");
 
 #if defined(CHI_GLES)
 #define CHI_GLSL_HEADER "#version 300 es\nprecision highp float;\n"
@@ -170,40 +31,64 @@ Mat4 lookAt(float eye_x, float eye_y, float eye_z, float target_x, float target_
 #define CHI_GLSL_HEADER "#version 330\n"
 #endif
 
-const char* toonVertexShaderSource() {
-    return CHI_GLSL_HEADER R"(
+// Skinning for the toon shader. Vertices with zero total weight (static
+// scenery) keep their model-space position.
+const char* kSkinningGlsl = R"(
+uniform mat4 joints[32];
+
+mat4 skinMatrix(vec4 j, vec4 w) {
+    return w.x * joints[int(j.x)] + w.y * joints[int(j.y)] + w.z * joints[int(j.z)] + w.w * joints[int(j.w)];
+}
+)";
+
+std::string toonVertexShaderSource() {
+    return std::string(CHI_GLSL_HEADER) + kSkinningGlsl + R"(
         uniform mat4 mvp;
         uniform mat4 model;
 
         in vec3 position;
         in vec3 normal0;
         in vec4 color0;
+        in vec2 uv0;
+        in vec4 joints0;
+        in vec4 weights0;
         out vec3 normal;
         out vec3 local_pos;
         out vec3 world_pos;
         out vec4 color;
+        out vec2 v_uv;
 
         void main() {
-            vec4 world_position = model * vec4(position, 1.0);
-            gl_Position = mvp * vec4(position, 1.0);
-            local_pos = position;
+            vec4 p = vec4(position, 1.0);
+            vec3 n = normal0;
+            if (weights0.x + weights0.y + weights0.z + weights0.w > 0.0) {
+                mat4 skin = skinMatrix(joints0, weights0);
+                p = skin * p;
+                n = (skin * vec4(normal0, 0.0)).xyz;
+            }
+            vec4 world_position = model * p;
+            gl_Position = mvp * p;
+            local_pos = p.xyz;
             world_pos = world_position.xyz;
-            normal = normalize((model * vec4(normal0, 0.0)).xyz);
+            normal = normalize((model * vec4(n, 0.0)).xyz);
             color = color0;
+            v_uv = uv0;
         }
     )";
 }
 
-const char* toonFragmentShaderSource() {
-    return CHI_GLSL_HEADER R"(
+std::string toonFragmentShaderSource() {
+    return std::string(CHI_GLSL_HEADER) + R"(
         uniform vec4 light_dir_bands;
         uniform vec4 style;
         uniform vec4 surface;
+        uniform sampler2D base_color;
 
         in vec3 normal;
         in vec3 local_pos;
         in vec3 world_pos;
         in vec4 color;
+        in vec2 v_uv;
         out vec4 frag_color;
 
         void main() {
@@ -213,7 +98,8 @@ const char* toonFragmentShaderSource() {
             float bands = max(light_dir_bands.w, 2.0);
             float shade = floor(ndotl * bands) / (bands - 1.0);
             float ink_shadow = mix(0.42, 1.08, shade);
-            vec3 final_color = color.rgb * ink_shadow;
+            vec3 albedo = color.rgb * texture(base_color, v_uv).rgb;
+            vec3 final_color = albedo * ink_shadow;
 
             if ((surface.x < 0.5) && (style.x > 0.5)) {
                 vec3 object_coord = (local_pos + vec3(0.5)) * max(style.z, 1.0);
@@ -249,83 +135,27 @@ const char* toonFragmentShaderSource() {
     )";
 }
 
-const char* outlineVertexShaderSource() {
-    return CHI_GLSL_HEADER R"(
-        uniform mat4 mvp;
-        uniform vec4 outline_thickness;
+// Vertex layout shared by every program: attribute locations are fixed so a
+// single attribute setup works for both static and skinned meshes.
+enum AttributeLocation : GLuint {
+    kAttrPosition = 0,
+    kAttrNormal = 1,
+    kAttrColor = 2,
+    kAttrUv = 3,
+    kAttrJoints = 4,
+    kAttrWeights = 5,
+};
 
-        in vec3 position;
-        in vec3 normal0;
-
-        void main() {
-            vec3 expanded = position + normal0 * outline_thickness.w;
-            gl_Position = mvp * vec4(expanded, 1.0);
-        }
-    )";
-}
-
-const char* outlineFragmentShaderSource() {
-    return CHI_GLSL_HEADER R"(
-        uniform vec4 outline_color;
-        out vec4 frag_color;
-
-        void main() {
-            frag_color = vec4(outline_color.rgb, 1.0);
-        }
-    )";
-}
-
-ToonVsUniforms makeToonVsUniforms(const Mat4& view_projection, const Mat4& model) {
-    ToonVsUniforms uniforms{};
-    uniforms.mvp = multiply(view_projection, model);
-    uniforms.model = model;
-    return uniforms;
-}
-
-ToonFsUniforms makeToonFsUniforms(const StyleSettings& style, bool ground) {
-    ToonFsUniforms uniforms{};
-    uniforms.light_dir_bands[0] = style.light_x;
-    uniforms.light_dir_bands[1] = style.light_y;
-    uniforms.light_dir_bands[2] = style.light_z;
-    uniforms.light_dir_bands[3] = std::floor(style.toon_bands + 0.5f);
-    uniforms.style[0] = style.halftone_enabled ? 1.0f : 0.0f;
-    uniforms.style[1] = style.halftone_intensity;
-    uniforms.style[2] = style.halftone_scale;
-    uniforms.style[3] = 0.0f;
-    uniforms.surface[0] = ground ? 1.0f : 0.0f;
-    uniforms.surface[1] = 0.0f;
-    uniforms.surface[2] = 0.0f;
-    uniforms.surface[3] = 0.0f;
-    return uniforms;
-}
-
-OutlineVsUniforms makeOutlineVsUniforms(const Mat4& view_projection, const Mat4& model, const StyleSettings& style) {
-    OutlineVsUniforms uniforms{};
-    uniforms.mvp = multiply(view_projection, model);
-    uniforms.outline_thickness[3] = style.outline_thickness;
-    return uniforms;
-}
-
-OutlineFsUniforms makeOutlineFsUniforms(const StyleSettings& style) {
-    OutlineFsUniforms uniforms{};
-    uniforms.outline_color[0] = style.outline_color[0];
-    uniforms.outline_color[1] = style.outline_color[1];
-    uniforms.outline_color[2] = style.outline_color[2];
-    uniforms.outline_color[3] = 1.0f;
-    return uniforms;
-}
-
-// Compiles and links a program. Attribute locations are fixed so one VAO
-// layout serves both the toon and outline programs.
-GLuint buildProgram(const char* vertex_source, const char* fragment_source, const char* label) {
-    auto compile = [label](GLenum type, const char* source) {
+GLuint buildProgram(const std::string& vertex_source, const std::string& fragment_source, const char* label) {
+    auto compile = [label](GLenum type, const std::string& source) {
         const GLuint shader = glCreateShader(type);
-        glShaderSource(shader, 1, &source, nullptr);
+        const char* text = source.c_str();
+        glShaderSource(shader, 1, &text, nullptr);
         glCompileShader(shader);
         GLint ok = 0;
         glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
         if (ok == 0) {
-            char log[1024]{};
+            char log[2048]{};
             glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
             std::fprintf(stderr, "[renderer] %s shader compile failed: %s\n", label, log);
             glDeleteShader(shader);
@@ -343,9 +173,12 @@ GLuint buildProgram(const char* vertex_source, const char* fragment_source, cons
     const GLuint program = glCreateProgram();
     glAttachShader(program, vs);
     glAttachShader(program, fs);
-    glBindAttribLocation(program, 0, "position");
-    glBindAttribLocation(program, 1, "normal0");
-    glBindAttribLocation(program, 2, "color0");
+    glBindAttribLocation(program, kAttrPosition, "position");
+    glBindAttribLocation(program, kAttrNormal, "normal0");
+    glBindAttribLocation(program, kAttrColor, "color0");
+    glBindAttribLocation(program, kAttrUv, "uv0");
+    glBindAttribLocation(program, kAttrJoints, "joints0");
+    glBindAttribLocation(program, kAttrWeights, "weights0");
     glLinkProgram(program);
     glDeleteShader(vs);
     glDeleteShader(fs);
@@ -353,7 +186,7 @@ GLuint buildProgram(const char* vertex_source, const char* fragment_source, cons
     GLint ok = 0;
     glGetProgramiv(program, GL_LINK_STATUS, &ok);
     if (ok == 0) {
-        char log[1024]{};
+        char log[2048]{};
         glGetProgramInfoLog(program, sizeof(log), nullptr, log);
         std::fprintf(stderr, "[renderer] %s program link failed: %s\n", label, log);
         return 0;
@@ -361,78 +194,146 @@ GLuint buildProgram(const char* vertex_source, const char* fragment_source, cons
     return program;
 }
 
+void setVertexLayout() {
+    const GLsizei stride = sizeof(MeshVertex);
+    glEnableVertexAttribArray(kAttrPosition);
+    glVertexAttribPointer(kAttrPosition, 3, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<const void*>(offsetof(MeshVertex, position)));
+    glEnableVertexAttribArray(kAttrNormal);
+    glVertexAttribPointer(kAttrNormal, 3, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<const void*>(offsetof(MeshVertex, normal)));
+    glEnableVertexAttribArray(kAttrColor);
+    glVertexAttribPointer(kAttrColor, 4, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<const void*>(offsetof(MeshVertex, color)));
+    glEnableVertexAttribArray(kAttrUv);
+    glVertexAttribPointer(kAttrUv, 2, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<const void*>(offsetof(MeshVertex, uv)));
+    glEnableVertexAttribArray(kAttrJoints);
+    glVertexAttribPointer(kAttrJoints, 4, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<const void*>(offsetof(MeshVertex, joints)));
+    glEnableVertexAttribArray(kAttrWeights);
+    glVertexAttribPointer(kAttrWeights, 4, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<const void*>(offsetof(MeshVertex, weights)));
+}
+
+struct GpuMesh {
+    GLuint vao = 0;
+    GLuint vbo = 0;
+    GLuint ibo = 0;
+    GLsizei index_count = 0;
+};
+
+GpuMesh uploadMesh(const MeshVertex* vertices, size_t vertex_count, const uint16_t* indices, size_t index_count) {
+    GpuMesh mesh;
+    mesh.index_count = static_cast<GLsizei>(index_count);
+
+    glGenVertexArrays(1, &mesh.vao);
+    glBindVertexArray(mesh.vao);
+
+    glGenBuffers(1, &mesh.vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(vertex_count * sizeof(MeshVertex)), vertices, GL_STATIC_DRAW);
+
+    glGenBuffers(1, &mesh.ibo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.ibo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLsizeiptr>(index_count * sizeof(uint16_t)), indices, GL_STATIC_DRAW);
+
+    setVertexLayout();
+    glBindVertexArray(0);
+    return mesh;
+}
+
+GLuint uploadTexture(const uint8_t* rgba, int width, int height) {
+    GLuint texture = 0;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return texture;
+}
+
+MeshVertex groundVertex(float x, float z, float r, float g, float b) {
+    MeshVertex v{};
+    v.position[0] = x;
+    v.position[1] = kGroundY;
+    v.position[2] = z;
+    v.normal[1] = 1.0f;
+    v.color[0] = r;
+    v.color[1] = g;
+    v.color[2] = b;
+    v.color[3] = 1.0f;
+    return v;
+}
+
+Mat4 perspectiveFor(int width, int height) {
+    const float aspect = width > 0 && height > 0
+        ? static_cast<float>(width) / static_cast<float>(height)
+        : 16.0f / 9.0f;
+    return math::perspective(60.0f * kPi / 180.0f, aspect, 0.01f, 100.0f);
+}
+
 } // namespace
 
 struct Renderer::Impl {
-    GLuint vao = 0;
-    GLuint vertex_buffer = 0;
-    GLuint index_buffer = 0;
+    GpuMesh ground;
+    GpuMesh warrior;
+    GLuint ground_texture = 0;
+    GLuint warrior_texture = 0;
+    GLuint white_texture = 0;
 
     GLuint toon_program = 0;
     GLint toon_mvp = -1;
     GLint toon_model = -1;
+    GLint toon_joints = -1;
     GLint toon_light_dir_bands = -1;
     GLint toon_style = -1;
     GLint toon_surface = -1;
 
-    GLuint outline_program = 0;
-    GLint outline_mvp = -1;
-    GLint outline_thickness = -1;
-    GLint outline_color = -1;
-
+    const assets::CharacterModel* character = nullptr;
+    Mat4 joint_matrices[kJoints]{};
     StyleSettings style{};
 };
 
-void Renderer::init() {
+void Renderer::init(const assets::CharacterModel& character) {
     impl_ = new Impl{};
+    impl_->character = &character;
 
-    glGenVertexArrays(1, &impl_->vao);
-    glBindVertexArray(impl_->vao);
+    const MeshVertex ground_vertices[] = {
+        groundVertex(-6.0f, -6.0f, 0.11f, 0.12f, 0.14f),
+        groundVertex(6.0f, -6.0f, 0.11f, 0.12f, 0.14f),
+        groundVertex(6.0f, 6.0f, 0.10f, 0.11f, 0.13f),
+        groundVertex(-6.0f, 6.0f, 0.10f, 0.11f, 0.13f),
+    };
+    // Counter-clockwise when seen from above, matching the glTF meshes.
+    const uint16_t ground_indices[] = {0, 2, 1, 0, 3, 2};
+    impl_->ground = uploadMesh(ground_vertices, 4, ground_indices, 6);
 
-    glGenBuffers(1, &impl_->vertex_buffer);
-    glBindBuffer(GL_ARRAY_BUFFER, impl_->vertex_buffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(kVertices), kVertices, GL_STATIC_DRAW);
+    const assets::CharacterMesh& mesh = character.mesh();
+    impl_->warrior = uploadMesh(mesh.vertices.data(), mesh.vertices.size(), mesh.indices.data(), mesh.indices.size());
 
-    // Cube indices first (36), then the ground quad (6).
-    uint16_t indices[42]{};
-    for (size_t i = 0; i < 36; ++i) {
-        indices[i] = kCubeIndices[i];
-    }
-    for (size_t i = 0; i < 6; ++i) {
-        indices[36 + i] = kGroundIndices[i];
-    }
-    glGenBuffers(1, &impl_->index_buffer);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, impl_->index_buffer);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
-
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<const void*>(offsetof(Vertex, position)));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<const void*>(offsetof(Vertex, normal)));
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<const void*>(offsetof(Vertex, color)));
+    const uint8_t white[4] = {255, 255, 255, 255};
+    impl_->white_texture = uploadTexture(white, 1, 1);
+    impl_->ground_texture = impl_->white_texture;
+    impl_->warrior_texture = mesh.base_color_rgba.empty()
+        ? impl_->white_texture
+        : uploadTexture(mesh.base_color_rgba.data(), mesh.texture_width, mesh.texture_height);
 
     impl_->toon_program = buildProgram(toonVertexShaderSource(), toonFragmentShaderSource(), "toon");
     if (impl_->toon_program != 0) {
         impl_->toon_mvp = glGetUniformLocation(impl_->toon_program, "mvp");
         impl_->toon_model = glGetUniformLocation(impl_->toon_program, "model");
+        impl_->toon_joints = glGetUniformLocation(impl_->toon_program, "joints");
         impl_->toon_light_dir_bands = glGetUniformLocation(impl_->toon_program, "light_dir_bands");
         impl_->toon_style = glGetUniformLocation(impl_->toon_program, "style");
         impl_->toon_surface = glGetUniformLocation(impl_->toon_program, "surface");
-    }
-
-    impl_->outline_program = buildProgram(outlineVertexShaderSource(), outlineFragmentShaderSource(), "outline");
-    if (impl_->outline_program != 0) {
-        impl_->outline_mvp = glGetUniformLocation(impl_->outline_program, "mvp");
-        impl_->outline_thickness = glGetUniformLocation(impl_->outline_program, "outline_thickness");
-        impl_->outline_color = glGetUniformLocation(impl_->outline_program, "outline_color");
+        glUseProgram(impl_->toon_program);
+        glUniform1i(glGetUniformLocation(impl_->toon_program, "base_color"), 0);
     }
 
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LEQUAL);
     glEnable(GL_CULL_FACE);
-    // Vertex winding is clockwise, matching the sokol default this scene was authored with.
-    glFrontFace(GL_CW);
+    // glTF meshes wind counter-clockwise; front faces are the outward ones.
+    glFrontFace(GL_CCW);
 }
 
 void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, int framebuffer_height) {
@@ -445,49 +346,62 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
 #endif
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    glBindVertexArray(impl_->vao);
+    // Third-person camera: looks at the upper body from behind and above.
+    const float px = gameplay.playerX();
+    const float pz = gameplay.playerZ();
+    const float target_y = 1.1f;
+    const float azimuth = gameplay.cameraAzimuth();
+    const float pitch = gameplay.cameraPitch();
+    const float distance = gameplay.cameraDistance();
+    const float horizontal = distance * std::cos(pitch);
+    const Mat4 view = math::lookAt(
+        px + horizontal * std::sin(azimuth), target_y + distance * std::sin(pitch), pz + horizontal * std::cos(azimuth),
+        px, target_y, pz);
+    const Mat4 view_projection = math::multiply(perspectiveFor(framebuffer_width, framebuffer_height), view);
 
-    const float aspect = framebuffer_width > 0 && framebuffer_height > 0
-        ? static_cast<float>(framebuffer_width) / static_cast<float>(framebuffer_height)
-        : 16.0f / 9.0f;
-    const Mat4 projection = perspective(60.0f * kPi / 180.0f, aspect, 0.01f, 100.0f);
-    const Mat4 view = lookAt(4.5f, 3.5f, 6.0f, 0.0f, 0.0f, 0.0f);
-    const Mat4 view_projection = multiply(projection, view);
-
-    glUseProgram(impl_->toon_program);
-    const auto drawToon = [this](const ToonVsUniforms& vs, const ToonFsUniforms& fs, GLsizei count, const void* offset) {
-        glUniformMatrix4fv(impl_->toon_mvp, 1, GL_FALSE, vs.mvp.m);
-        glUniformMatrix4fv(impl_->toon_model, 1, GL_FALSE, vs.model.m);
-        glUniform4fv(impl_->toon_light_dir_bands, 1, fs.light_dir_bands);
-        glUniform4fv(impl_->toon_style, 1, fs.style);
-        glUniform4fv(impl_->toon_surface, 1, fs.surface);
-        glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, offset);
+    auto setToonSurface = [this](bool ground) {
+        const float light[4] = {
+            impl_->style.light_x,
+            impl_->style.light_y,
+            impl_->style.light_z,
+            std::floor(impl_->style.toon_bands + 0.5f),
+        };
+        const float style[4] = {
+            impl_->style.halftone_enabled ? 1.0f : 0.0f,
+            impl_->style.halftone_intensity,
+            impl_->style.halftone_scale,
+            0.0f,
+        };
+        const float surface[4] = {ground ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f};
+        glUniform4fv(impl_->toon_light_dir_bands, 1, light);
+        glUniform4fv(impl_->toon_style, 1, style);
+        glUniform4fv(impl_->toon_surface, 1, surface);
     };
 
-    const ToonVsUniforms ground_vs = makeToonVsUniforms(view_projection, identity());
-    const ToonFsUniforms ground_fs = makeToonFsUniforms(impl_->style, true);
-    drawToon(ground_vs, ground_fs, 6, reinterpret_cast<const void*>(36 * sizeof(uint16_t)));
+    glUseProgram(impl_->toon_program);
+    glActiveTexture(GL_TEXTURE0);
 
-    const Mat4 model = translation(gameplay.playerX(), 0.0f, gameplay.playerZ());
-    const ToonVsUniforms cube_vs = makeToonVsUniforms(view_projection, model);
-    const ToonFsUniforms cube_fs = makeToonFsUniforms(impl_->style, false);
-    drawToon(cube_vs, cube_fs, 36, nullptr);
+    // Ground: static geometry, so the skinning path is skipped.
+    const Mat4 ground_model = math::identity();
+    glUniformMatrix4fv(impl_->toon_mvp, 1, GL_FALSE, math::multiply(view_projection, ground_model).m);
+    glUniformMatrix4fv(impl_->toon_model, 1, GL_FALSE, ground_model.m);
+    setToonSurface(true);
+    glBindTexture(GL_TEXTURE_2D, impl_->ground_texture);
+    glBindVertexArray(impl_->ground.vao);
+    glDrawElements(GL_TRIANGLES, impl_->ground.index_count, GL_UNSIGNED_SHORT, nullptr);
 
-    if (impl_->style.outline_thickness > 0.0f) {
-        const OutlineVsUniforms outline_vs = makeOutlineVsUniforms(view_projection, model, impl_->style);
-        const OutlineFsUniforms outline_fs = makeOutlineFsUniforms(impl_->style);
-        glUseProgram(impl_->outline_program);
-        glUniformMatrix4fv(impl_->outline_mvp, 1, GL_FALSE, outline_vs.mvp.m);
-        glUniform4fv(impl_->outline_thickness, 1, outline_vs.outline_thickness);
-        glUniform4fv(impl_->outline_color, 1, outline_fs.outline_color);
-
-        // Inflated back faces act as the ink outline.
-        glCullFace(GL_FRONT);
-        glDepthMask(GL_FALSE);
-        glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_SHORT, nullptr);
-        glDepthMask(GL_TRUE);
-        glCullFace(GL_BACK);
-    }
+    // Warrior: pose the skeleton for the current clip, then draw skinned.
+    // Turn the rig so its measured front faces the heading.
+    const Mat4 model = math::multiply(math::translation(px, kGroundY, pz),
+        math::rotationY(gameplay.playerYaw() - impl_->character->frontYaw()));
+    impl_->character->evaluatePose(gameplay.clipName(), gameplay.clipTime(), impl_->joint_matrices);
+    glUniformMatrix4fv(impl_->toon_joints, kJoints, GL_FALSE, impl_->joint_matrices[0].m);
+    glUniformMatrix4fv(impl_->toon_mvp, 1, GL_FALSE, math::multiply(view_projection, model).m);
+    glUniformMatrix4fv(impl_->toon_model, 1, GL_FALSE, model.m);
+    setToonSurface(false);
+    glBindTexture(GL_TEXTURE_2D, impl_->warrior_texture);
+    glBindVertexArray(impl_->warrior.vao);
+    glDrawElements(GL_TRIANGLES, impl_->warrior.index_count, GL_UNSIGNED_SHORT, nullptr);
 
     glBindVertexArray(0);
 }
@@ -502,7 +416,6 @@ void Renderer::cleanup() {
     }
 
     glDeleteProgram(impl_->toon_program);
-    glDeleteProgram(impl_->outline_program);
     delete impl_;
     impl_ = nullptr;
 }
