@@ -1,5 +1,7 @@
 #pragma once
 
+#include "gameplay/WeaponState.h"
+
 namespace app {
 struct InputState;
 }
@@ -29,6 +31,9 @@ public:
     const char* clipName() const;
     // Seconds since the current clip started.
     float clipTime() const;
+
+    // Equipped weapon, switching, fist attack, and aim.
+    const WeaponState& weapon() const;
 
     // Third-person camera, already smoothed. The eye sits at the target plus
     // distance along the azimuth, raised by the pitch.
@@ -66,6 +71,8 @@ private:
     float camera_target_z_ = 0.0f;
     float camera_target_x_speed_ = 0.0f;
     float camera_target_z_speed_ = 0.0f;
+
+    WeaponState weapon_;
 };
 
 } // namespace gameplay

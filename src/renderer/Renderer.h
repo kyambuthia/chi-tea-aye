@@ -2,6 +2,7 @@
 
 namespace assets {
 class CharacterModel;
+struct StaticMesh;
 }
 
 namespace gameplay {
@@ -28,8 +29,9 @@ struct StyleSettings {
 
 class Renderer {
 public:
-    // Requires a current GL context. The character and world must outlive the renderer.
-    void init(const assets::CharacterModel& character, const world::World& world);
+    // Requires a current GL context. The character, world, and props must outlive the renderer.
+    void init(const assets::CharacterModel& character, const world::World& world, const assets::StaticMesh& rifle,
+        const assets::StaticMesh& pistol);
     void draw(const gameplay::GameState& gameplay, int framebuffer_width, int framebuffer_height);
     StyleSettings& styleSettings();
     void cleanup();

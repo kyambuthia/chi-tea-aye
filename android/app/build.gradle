@@ -37,6 +37,12 @@ android {
         }
 
     }
+    // The game's runtime assets live in the repository root, shared with desktop and web.
+    sourceSets {
+        main {
+            assets.srcDirs = ['../../assets']
+        }
+    }
     lint {
         abortOnError false
     }

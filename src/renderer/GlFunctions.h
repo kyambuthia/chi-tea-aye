@@ -39,7 +39,10 @@
     X(void, glDrawElements, (GLenum mode, GLsizei count, GLenum type, const void* indices)) \
     X(void, glActiveTexture, (GLenum texture)) \
     X(void, glGenerateMipmap, (GLenum target)) \
-    X(void, glUniform1i, (GLint location, GLint v0))
+    X(void, glUniform1i, (GLint location, GLint v0)) \
+    X(void, glUniform1f, (GLint location, GLfloat v0)) \
+    X(void, glDeleteVertexArrays, (GLsizei n, const GLuint* arrays)) \
+    X(void, glDeleteBuffers, (GLsizei n, const GLuint* buffers))
 
 #define CHI_GL_DECLARE(ret, name, args) extern ret(APIENTRY* chi_##name) args;
 CHI_GL_FUNCTIONS(CHI_GL_DECLARE)

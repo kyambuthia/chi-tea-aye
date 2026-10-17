@@ -3,6 +3,9 @@
 #include "assets/CharacterModel.h"
 #include "assets/MeshVertex.h"
 #include "gameplay/GameState.h"
+#include "gameplay/WeaponAttachment.h"
+#include "gameplay/WeaponState.h"
+#include "assets/StaticModel.h"
 #include "math/Mat4.h"
 #include "renderer/GlApi.h"
 #include "world/World.h"
@@ -24,6 +27,10 @@ constexpr float kPi = 3.14159265358979323846f;
 constexpr int kGroundCells = 24;
 constexpr float kGroundHalfSize = 6.0f;
 constexpr int kJoints = assets::kMaxJoints;
+
+// Grip offsets from the posed right hand to the prop's origin, tuned by eye.
+const math::Mat4 kRifleGrip = math::identity();
+const math::Mat4 kPistolGrip = math::identity();
 
 static_assert(kJoints == 32, "the skinning shader declares joints[32]");
 
@@ -157,6 +164,40 @@ std::string skeletonFragmentShaderSource() {
 
         void main() {
             frag_color = color;
+        }
+    )";
+}
+
+// Scope overlay: a full-screen pass, dark outside a round lens, with a centred reticle.
+std::string scopeVertexShaderSource() {
+    return std::string(CHI_GLSL_HEADER) + R"(
+        in vec2 position;
+        out vec2 v_ndc;
+
+        void main() {
+            v_ndc = position;
+            gl_Position = vec4(position, 0.0, 1.0);
+        }
+    )";
+}
+
+std::string scopeFragmentShaderSource() {
+    return std::string(CHI_GLSL_HEADER) + R"(
+        uniform float aspect;
+        uniform float alpha;
+        in vec2 v_ndc;
+        out vec4 frag_color;
+
+        void main() {
+            // Units of half the framebuffer height, so the lens is round on any aspect.
+            vec2 p = vec2(v_ndc.x * aspect, v_ndc.y);
+            float r = length(p);
+            float outside = smoothstep(0.40, 0.42, r);
+            float hair_x = step(abs(p.x), 0.0025) * step(0.02, abs(p.y)) * step(abs(p.y), 0.30);
+            float hair_y = step(abs(p.y), 0.0025) * step(0.02, abs(p.x)) * step(abs(p.x), 0.30);
+            float reticle = max(hair_x, hair_y) * (1.0 - outside);
+            float shade = max(outside * 0.92, reticle);
+            frag_color = vec4(0.0, 0.0, 0.0, shade * alpha);
         }
     )";
 }
@@ -325,11 +366,11 @@ void buildGround(const world::World& world, std::vector<MeshVertex>& vertices, s
     }
 }
 
-Mat4 perspectiveFor(int width, int height) {
+Mat4 perspectiveFor(int width, int height, float fov_radians) {
     const float aspect = width > 0 && height > 0
         ? static_cast<float>(width) / static_cast<float>(height)
         : 16.0f / 9.0f;
-    return math::perspective(60.0f * kPi / 180.0f, aspect, 0.01f, 100.0f);
+    return math::perspective(fov_radians, aspect, 0.01f, 100.0f);
 }
 
 } // namespace
@@ -352,8 +393,19 @@ struct Renderer::Impl {
     GLuint skeleton_program = 0;
     GLuint skeleton_vao = 0;
     GLuint skeleton_vbo = 0;
+    GLuint scope_program = 0;
+    GLint scope_aspect = -1;
+    GLint scope_alpha = -1;
+    GLuint scope_vao = 0;
+    GLuint scope_vbo = 0;
     GLint skeleton_mvp = -1;
     GLint skeleton_color = -1;
+
+    GpuMesh rifle_mesh;
+    GpuMesh pistol_mesh;
+    GLuint rifle_texture = 0;
+    GLuint pistol_texture = 0;
+    int hand_joint = -1;
 
     const assets::CharacterModel* character = nullptr;
     const world::World* world = nullptr;
@@ -362,8 +414,9 @@ struct Renderer::Impl {
     StyleSettings style{};
 };
 
-GLuint buildSkeletonProgram() {
-    auto compile = [](GLenum type, const std::string& source) {
+// Builds a program from sources with position-only input at attribute 0.
+GLuint buildFlatProgram(const std::string& vertex_source, const std::string& fragment_source, const char* label) {
+    auto compile = [label](GLenum type, const std::string& source) {
         const GLuint shader = glCreateShader(type);
         const char* text = source.c_str();
         glShaderSource(shader, 1, &text, nullptr);
@@ -373,14 +426,14 @@ GLuint buildSkeletonProgram() {
         if (ok == 0) {
             char log[2048]{};
             glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
-            std::fprintf(stderr, "[renderer] skeleton shader compile failed: %s\n", log);
+            std::fprintf(stderr, "[renderer] %s shader compile failed: %s\n", label, log);
             glDeleteShader(shader);
             return GLuint{0};
         }
         return shader;
     };
-    const GLuint vs = compile(GL_VERTEX_SHADER, skeletonVertexShaderSource());
-    const GLuint fs = compile(GL_FRAGMENT_SHADER, skeletonFragmentShaderSource());
+    const GLuint vs = compile(GL_VERTEX_SHADER, vertex_source);
+    const GLuint fs = compile(GL_FRAGMENT_SHADER, fragment_source);
     if (vs == 0 || fs == 0) {
         return 0;
     }
@@ -396,15 +449,31 @@ GLuint buildSkeletonProgram() {
     if (ok == 0) {
         char log[2048]{};
         glGetProgramInfoLog(program, sizeof(log), nullptr, log);
-        std::fprintf(stderr, "[renderer] skeleton program link failed: %s\n", log);
+        std::fprintf(stderr, "[renderer] %s program link failed: %s\n", label, log);
         return 0;
     }
     return program;
 }
 
-void Renderer::init(const assets::CharacterModel& character, const world::World& world) {
+void Renderer::init(const assets::CharacterModel& character, const world::World& world, const assets::StaticMesh& rifle,
+    const assets::StaticMesh& pistol) {
     impl_ = new Impl{};
     impl_->character = &character;
+    impl_->hand_joint = character.jointIndex("RightHand");
+
+    const uint8_t white_px[4] = {255, 255, 255, 255};
+    if (!rifle.vertices.empty()) {
+        impl_->rifle_mesh = uploadMesh(rifle.vertices.data(), rifle.vertices.size(), rifle.indices.data(), rifle.indices.size());
+        impl_->rifle_texture = rifle.base_color_rgba.empty()
+            ? uploadTexture(white_px, 1, 1)
+            : uploadTexture(rifle.base_color_rgba.data(), rifle.texture_width, rifle.texture_height);
+    }
+    if (!pistol.vertices.empty()) {
+        impl_->pistol_mesh = uploadMesh(pistol.vertices.data(), pistol.vertices.size(), pistol.indices.data(), pistol.indices.size());
+        impl_->pistol_texture = pistol.base_color_rgba.empty()
+            ? uploadTexture(white_px, 1, 1)
+            : uploadTexture(pistol.base_color_rgba.data(), pistol.texture_width, pistol.texture_height);
+    }
     impl_->world = &world;
     impl_->ground_height = [&world](float x, float z) { return world.groundHeight(x, z); };
 
@@ -435,13 +504,28 @@ void Renderer::init(const assets::CharacterModel& character, const world::World&
         glUniform1i(glGetUniformLocation(impl_->toon_program, "base_color"), 0);
     }
 
-    impl_->skeleton_program = buildSkeletonProgram();
+    impl_->skeleton_program = buildFlatProgram(skeletonVertexShaderSource(), skeletonFragmentShaderSource(), "skeleton");
     if (impl_->skeleton_program != 0) {
         impl_->skeleton_mvp = glGetUniformLocation(impl_->skeleton_program, "mvp");
         impl_->skeleton_color = glGetUniformLocation(impl_->skeleton_program, "color");
     }
     glGenVertexArrays(1, &impl_->skeleton_vao);
     glGenBuffers(1, &impl_->skeleton_vbo);
+
+    impl_->scope_program = buildFlatProgram(scopeVertexShaderSource(), scopeFragmentShaderSource(), "scope");
+    if (impl_->scope_program != 0) {
+        impl_->scope_aspect = glGetUniformLocation(impl_->scope_program, "aspect");
+        impl_->scope_alpha = glGetUniformLocation(impl_->scope_program, "alpha");
+    }
+    const float quad[8] = {-1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f};
+    glGenVertexArrays(1, &impl_->scope_vao);
+    glGenBuffers(1, &impl_->scope_vbo);
+    glBindVertexArray(impl_->scope_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, impl_->scope_vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(quad), quad, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(kAttrPosition);
+    glVertexAttribPointer(kAttrPosition, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), nullptr);
+    glBindVertexArray(0);
 
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LEQUAL);
@@ -470,12 +554,15 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     const float target_y = 1.1f;
     const float azimuth = gameplay.cameraAzimuth();
     const float pitch = gameplay.cameraPitch();
-    const float distance = gameplay.cameraDistance();
+    // Aiming narrows the view from 60 to 30 degrees and brings the camera a third closer.
+    const float aim = gameplay.weapon().aim();
+    const float distance = gameplay.cameraDistance() * (1.0f - 0.35f * aim);
     const float horizontal = distance * std::cos(pitch);
     const Mat4 view = math::lookAt(
         target_x + horizontal * std::sin(azimuth), target_y + distance * std::sin(pitch), target_z + horizontal * std::cos(azimuth),
         target_x, target_y, target_z);
-    const Mat4 view_projection = math::multiply(perspectiveFor(framebuffer_width, framebuffer_height), view);
+    const float fov = (60.0f - 30.0f * aim) * kPi / 180.0f;
+    const Mat4 view_projection = math::multiply(perspectiveFor(framebuffer_width, framebuffer_height, fov), view);
 
     auto setToonSurface = [this](bool ground) {
         const float light[4] = {
@@ -513,8 +600,14 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     // the model matrix is the identity.
     const Mat4 root = math::multiply(impl_->world->groundFrame(px, pz),
         math::rotationY(gameplay.playerYaw() - impl_->character->frontYaw()));
-    impl_->character->evaluatePose(gameplay.clipName(), gameplay.clipTime(), root, impl_->ground_height,
-        impl_->joint_matrices);
+    // A fist attack plays its punch over the locomotion, if the asset has the clip.
+    const char* clip_name = gameplay.clipName();
+    float clip_time = gameplay.clipTime();
+    if (gameplay.weapon().attacking() && impl_->character->hasClip("PunchCombo")) {
+        clip_name = "PunchCombo";
+        clip_time = gameplay.weapon().attackProgress() * impl_->character->clipDuration("PunchCombo");
+    }
+    impl_->character->evaluatePose(clip_name, clip_time, root, impl_->ground_height, impl_->joint_matrices);
     const Mat4 model = math::identity();
     glUniformMatrix4fv(impl_->toon_joints, kJoints, GL_FALSE, impl_->joint_matrices[0].m);
     glUniformMatrix4fv(impl_->toon_mvp, 1, GL_FALSE, view_projection.m);
@@ -523,6 +616,49 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     glBindTexture(GL_TEXTURE_2D, impl_->warrior_texture);
     glBindVertexArray(impl_->warrior.vao);
     glDrawElements(GL_TRIANGLES, impl_->warrior.index_count, GL_UNSIGNED_SHORT, nullptr);
+
+    // The equipped prop follows the posed right hand. Fists show no prop; a switch
+    // lowers the old prop and raises the new one.
+    const gameplay::WeaponState& weapon = gameplay.weapon();
+    if (impl_->hand_joint >= 0 && weapon.active() != gameplay::WeaponSlot::Fists) {
+        const bool rifle = weapon.active() == gameplay::WeaponSlot::Rifle;
+        const GpuMesh& prop = rifle ? impl_->rifle_mesh : impl_->pistol_mesh;
+        if (prop.index_count > 0) {
+            const Mat4 hand = math::multiply(impl_->joint_matrices[impl_->hand_joint],
+                impl_->character->jointBindWorld(impl_->hand_joint));
+            // Carry pose: the prop sits at the hand's position and follows the
+            // warrior's facing, so the barrel points forward. Hand rotation is not
+            // used, because the hand's long axis runs along the forearm.
+            Mat4 facing = root;
+            facing.m[12] = facing.m[13] = facing.m[14] = 0.0f;
+            const Mat4 at_hand = math::translation(hand.m[12], hand.m[13] - 0.3f * (1.0f - weapon.raise()), hand.m[14]);
+            const Mat4 grip = rifle ? kRifleGrip : kPistolGrip;
+            const Mat4 prop_model = math::multiply(at_hand, math::multiply(facing, grip));
+            glUniformMatrix4fv(impl_->toon_mvp, 1, GL_FALSE, math::multiply(view_projection, prop_model).m);
+            glUniformMatrix4fv(impl_->toon_model, 1, GL_FALSE, prop_model.m);
+            setToonSurface(false);
+            glBindTexture(GL_TEXTURE_2D, rifle ? impl_->rifle_texture : impl_->pistol_texture);
+            glBindVertexArray(prop.vao);
+            glDrawElements(GL_TRIANGLES, prop.index_count, GL_UNSIGNED_SHORT, nullptr);
+        }
+    }
+
+    // Scope: only with the rifle in hand, fading in with the aim.
+    const float scope = weapon.active() == gameplay::WeaponSlot::Rifle ? weapon.aim() : 0.0f;
+    if (scope > 0.001f && impl_->scope_program != 0) {
+        glDisable(GL_DEPTH_TEST);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glUseProgram(impl_->scope_program);
+        glUniform1f(impl_->scope_aspect, framebuffer_width > 0 && framebuffer_height > 0
+            ? static_cast<float>(framebuffer_width) / static_cast<float>(framebuffer_height)
+            : 16.0f / 9.0f);
+        glUniform1f(impl_->scope_alpha, scope);
+        glBindVertexArray(impl_->scope_vao);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        glDisable(GL_BLEND);
+        glEnable(GL_DEPTH_TEST);
+    }
 
     if (impl_->style.show_skeleton && impl_->skeleton_program != 0) {
         // Joint world positions: skin matrix times bind pose (the inverse of the bind's inverse).
@@ -581,6 +717,24 @@ void Renderer::cleanup() {
     if (impl_ == nullptr) {
         return;
     }
+
+    for (GpuMesh* mesh : {&impl_->rifle_mesh, &impl_->pistol_mesh}) {
+        if (mesh->vao != 0) {
+            glDeleteVertexArrays(1, &mesh->vao);
+            glDeleteBuffers(1, &mesh->vbo);
+            glDeleteBuffers(1, &mesh->ibo);
+        }
+    }
+    for (GLuint texture : {impl_->rifle_texture, impl_->pistol_texture}) {
+        if (texture != 0) {
+            glDeleteTextures(1, &texture);
+        }
+    }
+    glDeleteVertexArrays(1, &impl_->skeleton_vao);
+    glDeleteBuffers(1, &impl_->skeleton_vbo);
+    glDeleteVertexArrays(1, &impl_->scope_vao);
+    glDeleteBuffers(1, &impl_->scope_vbo);
+    glDeleteProgram(impl_->scope_program);
 
     glDeleteProgram(impl_->toon_program);
     delete impl_;

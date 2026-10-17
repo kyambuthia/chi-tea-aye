@@ -46,6 +46,8 @@ endif()
 add_library(chi-character STATIC
     src/assets/CharacterModel.cpp
     src/world/World.cpp
+    src/gameplay/WeaponState.cpp
+    src/assets/StaticModel.cpp
 )
 target_include_directories(chi-character PUBLIC src external/cgltf external/stb)
 target_link_libraries(chi-character PUBLIC ozz_animation_offline ozz_animation ozz_base)
@@ -134,10 +136,14 @@ if(CHI_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     target_link_libraries(clip_check PRIVATE chi-character)
     add_executable(foot_contact_check tests/foot_contact_check.cpp)
     target_link_libraries(foot_contact_check PRIVATE chi-character)
+    add_executable(weapon_attachment_check tests/weapon_attachment_check.cpp)
+    target_include_directories(weapon_attachment_check PRIVATE src)
+    add_executable(weapon_state_check tests/weapon_state_check.cpp src/gameplay/WeaponState.cpp)
+    target_include_directories(weapon_state_check PRIVATE src)
     add_executable(knee_check tests/knee_check.cpp)
     target_link_libraries(knee_check PRIVATE chi-character)
     add_executable(clip_direction_check tests/clip_direction_check.cpp)
     target_link_libraries(clip_direction_check PRIVATE chi-character)
-    add_executable(movement_check tests/movement_check.cpp src/gameplay/GameState.cpp src/physics/Physics.cpp)
+    add_executable(movement_check tests/movement_check.cpp src/gameplay/GameState.cpp src/gameplay/WeaponState.cpp src/physics/Physics.cpp)
     target_include_directories(movement_check PRIVATE src)
 endif()

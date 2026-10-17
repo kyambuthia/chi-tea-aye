@@ -38,6 +38,18 @@ inline Mat4 translation(float x, float y, float z) {
     return out;
 }
 
+// Rotation about the X axis.
+inline Mat4 rotationX(float radians) {
+    Mat4 out = identity();
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+    out.m[5] = c;
+    out.m[9] = -s;
+    out.m[6] = s;
+    out.m[10] = c;
+    return out;
+}
+
 // Rotation about the Y axis; +Z maps to (sin, 0, cos).
 inline Mat4 rotationY(float radians) {
     Mat4 out = identity();

@@ -121,6 +121,16 @@ void GameState::update(const app::InputState& input, physics::Physics& physics, 
     const float camera_goal_unwrapped = camera_azimuth_ + angleBetween(camera_azimuth_, camera_goal_azimuth_);
     camera_azimuth_ = smoothDamp(camera_azimuth_, camera_goal_unwrapped, camera_azimuth_speed_, kCameraAzimuthTime, delta_time);
 
+    // Weapons: switch, punch, and aim. These are independent of locomotion.
+    if (input.weapon_request >= 0) {
+        weapon_.request(static_cast<WeaponSlot>(input.weapon_request));
+    }
+    if (input.attack_pressed) {
+        weapon_.attack();
+    }
+    weapon_.setAiming(input.aim_held);
+    weapon_.update(delta_time);
+
     float dir_x = 0.0f;
     float dir_z = 0.0f;
     physics.inputDirection(input, camera_azimuth_, dir_x, dir_z);
@@ -236,6 +246,10 @@ const char* GameState::clipName() const {
 
 float GameState::clipTime() const {
     return clip_time_;
+}
+
+const WeaponState& GameState::weapon() const {
+    return weapon_;
 }
 
 float GameState::cameraTargetX() const {

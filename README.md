@@ -17,9 +17,14 @@ Minimal C++20 SDL3 game prototype.
 - WASD: move. Hold Shift to run.
 - Mouse: hold the left button and drag to orbit the camera; scroll to zoom.
 - Touch: drag the left half of the screen to move; drag the right half to orbit.
+- Weapons: 1 rifle, 2 pistol, 3 fists. Switching lowers the old weapon and raises the new one.
+- Fists: F to punch.
+- Rifle: hold the right mouse button to aim down the scope (the view narrows and the scope overlay appears).
+- F1: toggle the skeleton overlay (joints and bones), which also shows the current clip.
 
-The warrior model is `assets/characters/african_warrior.glb`. It is loaded from the
-working directory on desktop and bundled into the web build.
+The warrior model is `assets/characters/african_warrior.glb`, and the weapon props are
+`assets/models/rifle.glb` and `assets/models/pistol.glb`. They are loaded from the working
+directory on desktop, bundled into the web build, and packaged as assets on Android.
 
 ## Build
 

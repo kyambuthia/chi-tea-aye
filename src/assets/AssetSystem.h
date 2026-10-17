@@ -1,6 +1,7 @@
 #pragma once
 
 #include "assets/CharacterModel.h"
+#include "assets/StaticModel.h"
 
 namespace assets {
 
@@ -14,8 +15,14 @@ public:
 
     const CharacterModel& character() const;
 
+    // Weapon props. A missing file leaves the prop empty and the game runs without it.
+    const StaticMesh& rifle() const;
+    const StaticMesh& pistol() const;
+
 private:
     CharacterModel character_;
+    StaticModel rifle_;
+    StaticModel pistol_;
 };
 
 } // namespace assets

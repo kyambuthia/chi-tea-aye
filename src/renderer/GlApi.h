@@ -34,4 +34,7 @@
 #define glActiveTexture chi_glActiveTexture
 #define glGenerateMipmap chi_glGenerateMipmap
 #define glUniform1i chi_glUniform1i
+#define glUniform1f chi_glUniform1f
+#define glDeleteVertexArrays chi_glDeleteVertexArrays
+#define glDeleteBuffers chi_glDeleteBuffers
 #endif

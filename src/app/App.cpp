@@ -81,7 +81,7 @@ public:
         world_.init();
         physics_.init();
         gameplay_.init();
-        renderer_.init(assets_.character(), world_);
+        renderer_.init(assets_.character(), world_, assets_.rifle(), assets_.pistol());
         debug_ui_.init(window_, gl_context_, kGlslVersion);
 
         last_ticks_ns_ = SDL_GetTicksNS();
@@ -100,6 +100,8 @@ public:
         input_.look_dx = 0.0f;
         input_.look_dy = 0.0f;
         input_.zoom_steps = 0.0f;
+        input_.weapon_request = -1;
+        input_.attack_pressed = false;
 
         debug_ui_.beginFrame();
         debug_ui_.draw(gameplay_, input_, renderer_.styleSettings(), frame_count_, dt);
@@ -136,6 +138,12 @@ public:
                 return SDL_APP_SUCCESS;
             case SDL_EVENT_KEY_DOWN:
             case SDL_EVENT_KEY_UP:
+                if (e->type == SDL_EVENT_KEY_DOWN && !e->key.repeat) {
+                    if (e->key.scancode == SDL_SCANCODE_1) input_.weapon_request = 0;
+                    if (e->key.scancode == SDL_SCANCODE_2) input_.weapon_request = 1;
+                    if (e->key.scancode == SDL_SCANCODE_3) input_.weapon_request = 2;
+                    if (e->key.scancode == SDL_SCANCODE_F) input_.attack_pressed = true;
+                }
                 if (e->key.scancode == SDL_SCANCODE_F1 && e->type == SDL_EVENT_KEY_DOWN && !e->key.repeat) {
                     renderer_.styleSettings().show_skeleton = !renderer_.styleSettings().show_skeleton;
                 }
@@ -158,10 +166,17 @@ public:
                     !debug_ui_.wantsMouse()) {
                     input_.orbit_drag = true;
                 }
+                if (e->button.button == SDL_BUTTON_RIGHT && e->button.which != SDL_TOUCH_MOUSEID &&
+                    !debug_ui_.wantsMouse()) {
+                    input_.aim_held = true;
+                }
                 break;
             case SDL_EVENT_MOUSE_BUTTON_UP:
                 if (e->button.button == SDL_BUTTON_LEFT) {
                     input_.orbit_drag = false;
+                }
+                if (e->button.button == SDL_BUTTON_RIGHT) {
+                    input_.aim_held = false;
                 }
                 break;
             case SDL_EVENT_MOUSE_WHEEL:
