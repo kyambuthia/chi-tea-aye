@@ -440,6 +440,8 @@ bool CharacterModel::load(const void* data, size_t size) {
     };
     hips_ = findJoint("Hips");
     root_ = findJoint("Root");
+    finger_[0] = findJoint("RightFingers");
+    finger_[1] = findJoint("LeftFingers");
     spine_[0] = findJoint("Spine");
     spine_[1] = findJoint("Spine1");
     spine_[2] = findJoint("Spine2");
@@ -648,6 +650,16 @@ void CharacterModel::evaluatePose(const PoseRequest& request, const math::Mat4& 
             if (isDescendant(j, spine_[0])) {
                 locals[j] = scratch.upper[j];
             }
+        }
+    }
+
+    // Finger curl: the right hand closes about its knuckle axis; the left mirrors it.
+    if (request.finger_curl != 0.0f) {
+        if (finger_[0] >= 0) {
+            locals[finger_[0]] = math::multiply(locals[finger_[0]], math::rotationZ(request.finger_curl));
+        }
+        if (finger_[1] >= 0) {
+            locals[finger_[1]] = math::multiply(locals[finger_[1]], math::rotationZ(request.finger_curl));
         }
     }
 

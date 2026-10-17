@@ -83,6 +83,8 @@ public:
         float upper_time = 0.0f;
         // Bend of the spine in radians; positive leans forward.
         float spine_bend = 0.0f;
+        // Curl of the hands in radians, about the hand's knuckle axis (0 = open).
+        float finger_curl = 0.0f;
         // Model-space point the right hand is placed on (two-bone IK), or nullptr.
         const float* right_hand_goal = nullptr;
         // Model-space point the left hand reaches for (two-bone IK), or nullptr.
@@ -140,6 +142,7 @@ private:
     int left_arm_[3] = {-1, -1, -1};  // upper arm, forearm, hand
     int right_arm_[3] = {-1, -1, -1};
     int spine_[3] = {-1, -1, -1};     // spine segments, base to top
+    int finger_[2] = {-1, -1};        // right and left finger joints (the palm-to-tip bone)
     bool has_feet_ = false;
     float front_yaw_ = 0.0f;
 };

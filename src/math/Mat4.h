@@ -50,6 +50,18 @@ inline Mat4 rotationX(float radians) {
     return out;
 }
 
+// Rotation about the Z axis.
+inline Mat4 rotationZ(float radians) {
+    Mat4 out = identity();
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+    out.m[0] = c;
+    out.m[4] = -s;
+    out.m[1] = s;
+    out.m[5] = c;
+    return out;
+}
+
 // Rotation about the Y axis; +Z maps to (sin, 0, cos).
 inline Mat4 rotationY(float radians) {
     Mat4 out = identity();

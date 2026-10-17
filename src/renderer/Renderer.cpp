@@ -39,6 +39,8 @@ const math::Mat4 kRifleGrip = math::identity();
 // muzzle, -Z). Tuned by eye from a side view.
 const float kRifleGripLocal[3] = {0.0f, -0.05f, 0.12f};  // the hand is 5 cm below the bore
 const float kRifleForegripLocal[3] = {0.0f, -0.03f, -0.2f};
+// How far the hands close around the held rifle, in radians (about 70 degrees).
+constexpr float kGripCurl = 1.2f;
 // The spine leans toward the aim: this many radians per radian of camera pitch, up to a limit.
 constexpr float kSpineBendPerPitch = 0.8f;
 constexpr float kSpineBendLimit = 0.5f;
@@ -728,6 +730,8 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     const float aim_weight = rifle_ready ? (weapon.firing() ? 1.0f : weapon.aim()) : 0.0f;
     const float lean = std::fmax(-kSpineBendLimit, std::fmin(kSpineBendLimit, kSpineBendPerPitch * gameplay.cameraPitch()));
     request.spine_bend = aim_weight * lean;
+    // Hands close around the rifle while it is held (see kGripCurl).
+    request.finger_curl = rifle_ready ? kGripCurl : 0.0f;
 
     // A held rifle is placed by the hands, then the left arm reaches the fore-end.
     // Two passes: the left hand's goal depends on where the rifle is.
