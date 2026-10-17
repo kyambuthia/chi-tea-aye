@@ -267,6 +267,10 @@ bool DebugUi::wantsMouse() const {
     return ImGui::GetIO().WantCaptureMouse;
 }
 
+bool DebugUi::wantsKeyboard() const {
+    return ImGui::GetIO().WantCaptureKeyboard;
+}
+
 void DebugUi::cleanup() {
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplSDL3_Shutdown();

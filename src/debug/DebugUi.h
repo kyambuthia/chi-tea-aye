@@ -27,6 +27,7 @@ public:
     void render();
     bool handleEvent(const SDL_Event* event);
     bool wantsMouse() const;
+    bool wantsKeyboard() const;
     void cleanup();
 };
 

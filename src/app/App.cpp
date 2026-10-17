@@ -140,7 +140,9 @@ public:
                 return SDL_APP_SUCCESS;
             case SDL_EVENT_KEY_DOWN:
             case SDL_EVENT_KEY_UP:
-                if (e->type == SDL_EVENT_KEY_DOWN && !e->key.repeat) {
+                // While the dev panel has the keyboard, keys go to it, not the game.
+                // Key releases always pass through, so no key is left stuck down.
+                if (e->type == SDL_EVENT_KEY_DOWN && !e->key.repeat && !debug_ui_.wantsKeyboard()) {
                     if (e->key.scancode == SDL_SCANCODE_1) input_.weapon_request = 0;
                     if (e->key.scancode == SDL_SCANCODE_2) input_.weapon_request = 1;
                     if (e->key.scancode == SDL_SCANCODE_3) input_.weapon_request = 2;
@@ -157,13 +159,16 @@ public:
                 if (e->key.scancode == SDL_SCANCODE_ESCAPE && e->type == SDL_EVENT_KEY_DOWN) {
                     return SDL_APP_SUCCESS;
                 }
-                setKey(e->key.scancode, e->type == SDL_EVENT_KEY_DOWN);
+                if (e->type == SDL_EVENT_KEY_UP || !debug_ui_.wantsKeyboard()) {
+                    setKey(e->key.scancode, e->type == SDL_EVENT_KEY_DOWN);
+                }
                 break;
             case SDL_EVENT_MOUSE_MOTION:
                 input_.mouse.x = e->motion.x;
                 input_.mouse.y = e->motion.y;
                 // Touches also produce mouse events; the touch path handles those.
-                if (input_.orbit_drag && e->motion.which != SDL_TOUCH_MOUSEID) {
+                // Drags over the dev panel, such as its sliders, must not move the camera.
+                if (input_.orbit_drag && e->motion.which != SDL_TOUCH_MOUSEID && !debug_ui_.wantsMouse()) {
                     input_.look_dx += e->motion.xrel;
                     input_.look_dy += e->motion.yrel;
                 }
