@@ -346,17 +346,21 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
 #endif
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // Third-person camera: looks at the upper body from behind and above.
+    // The player model stands at the player position.
     const float px = gameplay.playerX();
     const float pz = gameplay.playerZ();
+
+    // Third-person camera: looks at the upper body from behind and above.
+    const float target_x = gameplay.cameraTargetX();
+    const float target_z = gameplay.cameraTargetZ();
     const float target_y = 1.1f;
     const float azimuth = gameplay.cameraAzimuth();
     const float pitch = gameplay.cameraPitch();
     const float distance = gameplay.cameraDistance();
     const float horizontal = distance * std::cos(pitch);
     const Mat4 view = math::lookAt(
-        px + horizontal * std::sin(azimuth), target_y + distance * std::sin(pitch), pz + horizontal * std::cos(azimuth),
-        px, target_y, pz);
+        target_x + horizontal * std::sin(azimuth), target_y + distance * std::sin(pitch), target_z + horizontal * std::cos(azimuth),
+        target_x, target_y, target_z);
     const Mat4 view_projection = math::multiply(perspectiveFor(framebuffer_width, framebuffer_height), view);
 
     auto setToonSurface = [this](bool ground) {
