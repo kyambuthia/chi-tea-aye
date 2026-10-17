@@ -143,6 +143,7 @@ def main():
         # The walking strafes: the non-walking strafe clips shuffle without planting their feet.
         ('StrafeLeft', 'left strafe walking.fbx', True),
         ('StrafeRight', 'right strafe walking.fbx', True),
+        ('WalkBackwards', 'walking_backwards.fbx', True),
     ]
     actions, report = [], {'clips': {}}
     for title, filename, loop in clips:
