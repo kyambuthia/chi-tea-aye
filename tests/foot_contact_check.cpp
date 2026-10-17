@@ -1,7 +1,7 @@
 // Measures how well the feet meet uneven terrain, with and without foot IK.
 // For each frame, the lowest skinned vertex should sit on the ground under it.
-// Build and run from the repository root, with the compile command in one line:
-//   g++ -std=c++20 -Isrc -Iexternal/cgltf -Iexternal/stb tests/foot_contact_check.cpp src/assets/CharacterModel.cpp src/world/World.cpp -o build/foot_contact_check && ./build/foot_contact_check
+// Build and run from the repository root:
+//   cmake --build build --target foot_contact_check && ./build/foot_contact_check
 
 #include "assets/CharacterModel.h"
 #include "world/World.h"

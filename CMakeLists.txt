@@ -32,6 +32,24 @@ else()
     add_subdirectory(external/SDL)
 endif()
 
+# ozz-animation: the runtime and offline builders only; no tools, samples, or importers.
+    set(ozz_build_tools OFF CACHE BOOL "" FORCE)
+    set(ozz_build_fbx OFF CACHE BOOL "" FORCE)
+    set(ozz_build_gltf OFF CACHE BOOL "" FORCE)
+    set(ozz_build_samples OFF CACHE BOOL "" FORCE)
+    set(ozz_build_howtos OFF CACHE BOOL "" FORCE)
+    set(ozz_build_tests OFF CACHE BOOL "" FORCE)
+    set(ozz_build_data OFF CACHE BOOL "" FORCE)
+    add_subdirectory(external/ozz-animation)
+
+# Character and world logic, shared by the game and the tests.
+add_library(chi-character STATIC
+    src/assets/CharacterModel.cpp
+    src/world/World.cpp
+)
+target_include_directories(chi-character PUBLIC src external/cgltf external/stb)
+target_link_libraries(chi-character PUBLIC ozz_animation_offline ozz_animation ozz_base)
+
 set(IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/imgui")
 add_library(imgui STATIC
     ${IMGUI_DIR}/imgui.cpp
@@ -54,10 +72,8 @@ set(CHI_SOURCES
     src/renderer/Renderer.cpp
     src/renderer/GlFunctions.cpp
     src/gameplay/GameState.cpp
-    src/world/World.cpp
     src/physics/Physics.cpp
     src/assets/AssetSystem.cpp
-    src/assets/CharacterModel.cpp
     src/debug/DebugUi.cpp
 )
 
@@ -86,7 +102,7 @@ target_compile_options(${CHI_APP_TARGET} PRIVATE
     $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic>
 )
 
-target_link_libraries(${CHI_APP_TARGET} PRIVATE imgui SDL3::SDL3)
+target_link_libraries(${CHI_APP_TARGET} PRIVATE chi-character imgui SDL3::SDL3)
 
 if(EMSCRIPTEN)
     # Emscripten emits an HTML shell alongside the JS and WASM.
@@ -103,4 +119,13 @@ elseif(NOT CHI_GLES)
     # loaded at runtime (see src/renderer/GlFunctions.cpp).
     find_package(OpenGL REQUIRED)
     target_link_libraries(${CHI_APP_TARGET} PRIVATE OpenGL::GL)
+endif()
+
+# Unit-style checks, built and run from the repository root.
+option(CHI_BUILD_TESTS "Build the character and terrain checks" ON)
+if(CHI_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
+    add_executable(clip_check tests/clip_check.cpp)
+    target_link_libraries(clip_check PRIVATE chi-character)
+    add_executable(foot_contact_check tests/foot_contact_check.cpp)
+    target_link_libraries(foot_contact_check PRIVATE chi-character)
 endif()

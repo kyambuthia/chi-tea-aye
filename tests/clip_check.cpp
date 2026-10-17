@@ -1,6 +1,6 @@
 // Samples every warrior animation clip and checks that the poses are sane.
 // Build and run from the repository root:
-//   g++ -std=c++20 -Isrc -Iexternal/cgltf -Iexternal/stb tests/clip_check.cpp src/assets/CharacterModel.cpp -o build/clip_check && ./build/clip_check
+//   cmake --build build --target clip_check && ./build/clip_check
 
 #include "assets/CharacterModel.h"
 

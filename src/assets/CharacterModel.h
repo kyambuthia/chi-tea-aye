@@ -3,12 +3,20 @@
 #include "assets/MeshVertex.h"
 #include "math/Mat4.h"
 
+#include <ozz/base/memory/unique_ptr.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <string>
 #include <vector>
 
 struct cgltf_data;
+
+namespace ozz::animation {
+class Animation;
+class Skeleton;
+} // namespace ozz::animation
 
 namespace assets {
 
@@ -25,10 +33,12 @@ struct CharacterMesh {
     int texture_height = 0;
 };
 
-// A skinned glTF character (binary .glb) with its animation clips.
+// A skinned glTF character (binary .glb) with its animation clips. The skeleton
+// and clips are built as ozz-animation data; sampling and local-to-model
+// evaluation run through ozz, and foot IK is applied on top.
 class CharacterModel {
 public:
-    CharacterModel() = default;
+    CharacterModel();
     ~CharacterModel();
     CharacterModel(const CharacterModel&) = delete;
     CharacterModel& operator=(const CharacterModel&) = delete;
@@ -37,10 +47,10 @@ public:
     void cleanup();
 
     const CharacterMesh& mesh() const;
-
-    // Heading (radians about +Y) of the mesh's front at zero rotation. The mesh faces -Z.
-    float frontYaw() const;
     bool hasClip(const char* name) const;
+
+    // Heading (radians about +Y) of the mesh's front at zero rotation. The mesh faces +Z.
+    float frontYaw() const;
 
     // Writes kMaxJoints skinning matrices for the named clip at the given time,
     // looping over the clip's duration. The matrices map the bind pose to the
@@ -51,23 +61,7 @@ public:
         const GroundHeightFn& ground, math::Mat4* out) const;
 
 private:
-    // cgltf points into the file bytes for the GLB binary chunk, so keep a copy alive.
-    std::vector<uint8_t> file_bytes_;
-    cgltf_data* gltf_ = nullptr;
-    CharacterMesh mesh_;
-
-    // Skeleton, indexed by joint.
-    std::vector<const void*> joint_nodes_;
-    std::vector<math::Mat4> inverse_bind_;
-
-    // Per glTF node: the rest pose of the rig as exported, and the rest pose the
-    // mesh is bound to (from the inverse bind matrices). They differ when the
-    // clips were authored on a different rest pose than the mesh.
-    std::vector<math::Mat4> rest_local_rig_;
-    std::vector<math::Mat4> rest_local_bind_;
-    float front_yaw_ = 0.0f;
-
-    // Per foot: the chain the IK solves (thigh, knee, ankle, toe), and the
+    // Per foot: the joints the IK solves (thigh, knee, ankle, toe), and the
     // heights of the sole below the ankle and of the toe above its lowest point.
     struct FootChain {
         int up = -1;
@@ -77,11 +71,31 @@ private:
         float ankle = 0.0f;
         float toe_offset = 0.0f;
     };
+
+    void applyFootIk(std::vector<math::Mat4>& locals, const math::Mat4& root, const GroundHeightFn& ground) const;
+
+    cgltf_data* gltf_ = nullptr;
+    std::vector<uint8_t> file_bytes_;  // cgltf keeps pointers into these bytes
+    CharacterMesh mesh_;
+
+    // Skin joints, indexed by joint. Joint j's parent is joint_parent_[j] (or -1).
+    std::vector<const void*> joint_nodes_;
+    std::vector<int> joint_parent_;
+    std::vector<math::Mat4> inverse_bind_;
+    std::vector<math::Mat4> joint_world_bind_;  // bind pose, model space
+    std::vector<math::Mat4> bind_local_;        // bind pose, relative to the parent joint
+
+    // ozz data. The skeleton and animations are in depth-first joint order;
+    // dfs_joint_ maps that order back to joint indices.
+    ozz::unique_ptr<ozz::animation::Skeleton> skeleton_;
+    std::vector<ozz::unique_ptr<ozz::animation::Animation>> animations_;
+    std::vector<std::string> animation_names_;
+    std::vector<int> dfs_joint_;
+
     FootChain feet_[2];
     int hips_ = -1;
     bool has_feet_ = false;
-
-    void applyFootIk(std::vector<math::Mat4>& local, const math::Mat4& root, const GroundHeightFn& ground) const;
+    float front_yaw_ = 0.0f;
 };
 
 } // namespace assets
