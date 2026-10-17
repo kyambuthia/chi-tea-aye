@@ -59,6 +59,29 @@ int main() {
     expectNear(at[1], 2.0f, 1e-4f, "identity grip y");
     expectNear(at[2], 3.0f, 1e-4f, "identity grip z");
 
+    // Held rifle: the grip lands on the hand, and the barrel runs along the facing.
+    {
+        const float grip_world[3] = {1.0f, 2.0f, 3.0f};
+        const float forward[3] = {0.0f, 0.0f, 1.0f};
+        const float grip_local[3] = {0.0f, -0.05f, -0.12f};
+        const math::Mat4 rifle = gameplay::makeHeldWeaponTransform(grip_world, forward, grip_local);
+        apply(rifle, grip_local, at);
+        expectNear(at[0], 1.0f, 1e-4f, "held grip x");
+        expectNear(at[1], 2.0f, 1e-4f, "held grip y");
+        expectNear(at[2], 3.0f, 1e-4f, "held grip z");
+        const float barrel_tip[3] = {0.0f, 0.0f, 0.5f};
+        float tip[3];
+        apply(rifle, barrel_tip, tip);
+        expectNear(tip[0] - at[0], 0.0f, 1e-4f, "barrel stays on the facing x");
+        expectNear(tip[2] - at[2], 0.62f, 1e-4f, "barrel runs forward");
+        // Turned to face +X, the barrel follows the facing.
+        const float east[3] = {1.0f, 0.0f, 0.0f};
+        const math::Mat4 turned = gameplay::makeHeldWeaponTransform(grip_world, east, grip_local);
+        apply(turned, barrel_tip, tip);
+        expectNear(tip[0] - 1.0f, 0.62f, 1e-3f, "turned: barrel runs along +x");
+        expectNear(tip[2] - 3.0f, 0.0f, 1e-3f, "turned: barrel stays level");
+    }
+
     std::printf(failures == 0 ? "WEAPON ATTACHMENT OK\n" : "%d FAILURE(S)\n", failures);
     return failures == 0 ? 0 : 1;
 }

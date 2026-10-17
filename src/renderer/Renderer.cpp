@@ -30,6 +30,10 @@ constexpr int kJoints = assets::kMaxJoints;
 
 // Grip offsets from the posed right hand to the prop's origin, tuned by eye.
 const math::Mat4 kRifleGrip = math::identity();
+// The rifle's grip and fore-end points in prop space, in metres from the prop's centre.
+// The grip is under the receiver; the fore-end is the front of the handguard. Tuned by eye.
+const float kRifleGripLocal[3] = {0.0f, -0.05f, -0.12f};
+const float kRifleForegripLocal[3] = {0.0f, -0.03f, 0.2f};
 const math::Mat4 kPistolGrip = math::identity();
 
 static_assert(kJoints == 32, "the skinning shader declares joints[32]");
@@ -620,7 +624,26 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
         clip_name = "PunchCombo";
         clip_time = gameplay.weapon().attackProgress() * impl_->character->clipDuration("PunchCombo");
     }
+    // A held rifle is placed from the right hand first, then the left arm reaches
+    // its fore-end: two passes, because the left hand goal depends on the rifle.
+    const gameplay::WeaponState& weapon = gameplay.weapon();
+    const bool rifle_held = impl_->hand_joint >= 0 && weapon.active() == gameplay::WeaponSlot::Rifle &&
+        impl_->rifle_mesh.index_count > 0;
     impl_->character->evaluatePose(clip_name, clip_time, root, impl_->ground_height, impl_->joint_matrices);
+    Mat4 rifle_model = math::identity();
+    if (rifle_held) {
+        const Mat4 hand = math::multiply(impl_->joint_matrices[impl_->hand_joint],
+            impl_->character->jointBindWorld(impl_->hand_joint));
+        const float grip_world[3] = {hand.m[12], hand.m[13] - 0.3f * (1.0f - weapon.raise()), hand.m[14]};
+        const float forward[3] = {root.m[8], 0.0f, root.m[10]};
+        rifle_model = gameplay::makeHeldWeaponTransform(grip_world, forward, kRifleGripLocal);
+        const Mat4& r = rifle_model;
+        const float p[3] = {kRifleForegripLocal[0], kRifleForegripLocal[1], kRifleForegripLocal[2]};
+        const float fore[3] = {r.m[0] * p[0] + r.m[4] * p[1] + r.m[8] * p[2] + r.m[12],
+            r.m[1] * p[0] + r.m[5] * p[1] + r.m[9] * p[2] + r.m[13],
+            r.m[2] * p[0] + r.m[6] * p[1] + r.m[10] * p[2] + r.m[14]};
+        impl_->character->evaluatePose(clip_name, clip_time, root, impl_->ground_height, impl_->joint_matrices, fore);
+    }
     const Mat4 model = math::identity();
     glUniformMatrix4fv(impl_->toon_joints, kJoints, GL_FALSE, impl_->joint_matrices[0].m);
     glUniformMatrix4fv(impl_->toon_mvp, 1, GL_FALSE, view_projection.m);
@@ -632,21 +655,21 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
 
     // The equipped prop follows the posed right hand. Fists show no prop; a switch
     // lowers the old prop and raises the new one.
-    const gameplay::WeaponState& weapon = gameplay.weapon();
     if (impl_->hand_joint >= 0 && weapon.active() != gameplay::WeaponSlot::Fists) {
         const bool rifle = weapon.active() == gameplay::WeaponSlot::Rifle;
         const GpuMesh& prop = rifle ? impl_->rifle_mesh : impl_->pistol_mesh;
         if (prop.index_count > 0) {
             const Mat4 hand = math::multiply(impl_->joint_matrices[impl_->hand_joint],
                 impl_->character->jointBindWorld(impl_->hand_joint));
-            // Carry pose: the prop sits at the hand's position and follows the
-            // warrior's facing, so the barrel points forward. Hand rotation is not
-            // used, because the hand's long axis runs along the forearm.
-            Mat4 facing = root;
-            facing.m[12] = facing.m[13] = facing.m[14] = 0.0f;
-            const Mat4 at_hand = math::translation(hand.m[12], hand.m[13] - 0.3f * (1.0f - weapon.raise()), hand.m[14]);
-            const Mat4 grip = rifle ? kRifleGrip : kPistolGrip;
-            const Mat4 prop_model = math::multiply(at_hand, math::multiply(facing, grip));
+            // The rifle is held at the grip (see above). The pistol keeps the carry
+            // pose: at the hand, following the warrior's facing.
+            Mat4 prop_model = rifle_model;
+            if (!rifle) {
+                Mat4 facing = root;
+                facing.m[12] = facing.m[13] = facing.m[14] = 0.0f;
+                const Mat4 at_hand = math::translation(hand.m[12], hand.m[13] - 0.3f * (1.0f - weapon.raise()), hand.m[14]);
+                prop_model = math::multiply(at_hand, math::multiply(facing, kPistolGrip));
+            }
             glUniformMatrix4fv(impl_->toon_mvp, 1, GL_FALSE, math::multiply(view_projection, prop_model).m);
             glUniformMatrix4fv(impl_->toon_model, 1, GL_FALSE, prop_model.m);
             setToonSurface(false);

@@ -71,8 +71,10 @@ public:
     // posed character in world space, with the character placed by root.
     // With a ground function, the feet are solved onto the ground (foot IK) and
     // the pelvis drops when a foot needs to reach down. Unused slots are identity.
+    // With left_hand_goal (model-space world point), the left arm reaches it by two-bone
+    // IK: used to put the left hand on a held weapon's fore-end.
     void evaluatePose(const char* clip_name, float time_seconds, const math::Mat4& root,
-        const GroundHeightFn& ground, math::Mat4* out) const;
+        const GroundHeightFn& ground, math::Mat4* out, const float* left_hand_goal = nullptr) const;
 
 private:
     // Per foot: the joints the IK solves (thigh, knee, ankle, toe), and the
@@ -87,6 +89,8 @@ private:
     };
 
     void applyFootIk(std::vector<math::Mat4>& locals, const math::Mat4& root, const GroundHeightFn& ground) const;
+    void solveTwoBone(std::vector<math::Mat4>& locals, const math::Mat4& root, int up, int mid, int end,
+        const float goal[3]) const;
 
     cgltf_data* gltf_ = nullptr;
     std::vector<uint8_t> file_bytes_;  // cgltf keeps pointers into these bytes
@@ -109,6 +113,7 @@ private:
     FootChain feet_[2];
     int hips_ = -1;
     int root_ = -1;  // the Root joint: its translation is the clip's root path
+    int left_arm_[3] = {-1, -1, -1};  // upper arm, forearm, hand
     bool has_feet_ = false;
     float front_yaw_ = 0.0f;
 };
