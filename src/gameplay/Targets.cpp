@@ -46,8 +46,11 @@ void Targets::update(float delta_time) {
     }
 }
 
-bool Targets::shoot(const Ray& ray, float max_distance) {
+bool Targets::shoot(const Ray& ray, float max_distance, float* impact_distance) {
     ++shots_;
+    if (impact_distance != nullptr) {
+        *impact_distance = max_distance;
+    }
     int nearest = -1;
     float nearest_distance = max_distance;
     for (int i = 0; i < kCount; ++i) {
@@ -71,6 +74,9 @@ bool Targets::shoot(const Ray& ray, float max_distance) {
     targets_[nearest].standing = false;
     targets_[nearest].time_down = 0.0f;
     ++hits_;
+    if (impact_distance != nullptr) {
+        *impact_distance = nearest_distance;
+    }
     return true;
 }
 

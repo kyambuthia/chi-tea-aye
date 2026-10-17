@@ -30,6 +30,7 @@ public:
     static constexpr int kCount = 6;
     static constexpr float kRange = 80.0f;       // metres: farther targets are out of reach
     static constexpr float kRespawnTime = 3.0f;  // seconds a target stays down
+    static constexpr float kFallTime = 0.35f;    // seconds a hit target takes to tip over
 
     // Places the targets on the terrain and resets the score.
     void place(const world::World& world);
@@ -38,7 +39,8 @@ public:
     // One shot along the ray. Knocks down the nearest standing target it hits.
     // Returns true on a hit.
     // max_distance is how far the shot can reach, e.g. up to the first wall it meets.
-    bool shoot(const Ray& ray, float max_distance = kRange);
+    // impact_distance, when given, receives where the shot ended: the hit, or max_distance.
+    bool shoot(const Ray& ray, float max_distance = kRange, float* impact_distance = nullptr);
 
     const std::array<Target, kCount>& targets() const { return targets_; }
     int shots() const { return shots_; }

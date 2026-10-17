@@ -204,8 +204,31 @@ void DebugUi::beginFrame() {
     ImGui::NewFrame();
 }
 
+namespace {
+
+// A crosshair of four short arms around a centre point.
+void drawCrosshair(ImVec2 centre) {
+    ImDrawList* draw = ImGui::GetForegroundDrawList();
+    constexpr float kGap = 5.0f;
+    constexpr float kLength = 9.0f;
+    const ImU32 outline = IM_COL32(0, 0, 0, 170);
+    const ImU32 fill = IM_COL32(240, 240, 240, 230);
+    const ImVec2 arms[4][2] = {
+        {ImVec2(centre.x - kGap - kLength, centre.y), ImVec2(centre.x - kGap, centre.y)},
+        {ImVec2(centre.x + kGap, centre.y), ImVec2(centre.x + kGap + kLength, centre.y)},
+        {ImVec2(centre.x, centre.y - kGap - kLength), ImVec2(centre.x, centre.y - kGap)},
+        {ImVec2(centre.x, centre.y + kGap), ImVec2(centre.x, centre.y + kGap + kLength)},
+    };
+    for (const auto& arm : arms) {
+        draw->AddLine(arm[0], arm[1], outline, 3.0f);
+        draw->AddLine(arm[0], arm[1], fill, 1.5f);
+    }
+}
+
+} // namespace
+
 void DebugUi::draw(const gameplay::GameState& gameplay, const app::InputState& input, renderer::StyleSettings& style, uint64_t frame_count, float delta_time,
-    float clip_time, float clip_duration) {
+    const char* played_clip, float clip_time, float clip_duration) {
     const float fps = delta_time > 0.0f ? 1.0f / delta_time : 0.0f;
 
     char frame_text[32]{};
@@ -248,7 +271,7 @@ void DebugUi::draw(const gameplay::GameState& gameplay, const app::InputState& i
     drawStatRow("Position x,z", player_text);
     char clip_text[48]{};
     // Looping clips wrap, so show the time within the clip, not the time since it started.
-    std::snprintf(clip_text, sizeof(clip_text), "%s  %.2f / %.2fs", gameplay.clipName(), clip_time, clip_duration);
+    std::snprintf(clip_text, sizeof(clip_text), "%s  %.2f / %.2fs", played_clip, clip_time, clip_duration);
     drawStatRow("Clip", clip_text);
     char target_text[48]{};
     std::snprintf(target_text, sizeof(target_text), "%d hit / %d shots", gameplay.targets().hits(), gameplay.targets().shots());
@@ -265,6 +288,51 @@ void DebugUi::draw(const gameplay::GameState& gameplay, const app::InputState& i
     ImGui::SliderFloat("Dot scale", &style.halftone_scale, 3.0f, 24.0f);
 
     ImGui::End();
+
+    // A crosshair at the centre of the view while the rifle is ready and not aimed
+    // down the scope (the scope has its own reticle).
+    const gameplay::WeaponState& weapon = gameplay.weapon();
+    if (weapon.active() == gameplay::WeaponSlot::Rifle && weapon.aim() < 0.5f) {
+        drawCrosshair(ImGui::GetMainViewport()->GetCenter());
+    }
+}
+
+void DebugUi::drawShotFeedback(const ShotFeedback& shot) {
+    ImDrawList* draw = ImGui::GetForegroundDrawList();
+    constexpr float kFlashTime = 0.06f;   // muzzle flash
+    constexpr float kTracerTime = 0.10f;  // tracer line
+    constexpr float kSparkTime = 0.18f;   // impact spark
+    constexpr float kMarkerTime = 0.22f;  // hit marker
+
+    if (shot.muzzle_visible && shot.shot_age < kFlashTime) {
+        const float fade = 1.0f - shot.shot_age / kFlashTime;
+        const float radius = 4.0f + 12.0f * fade;
+        draw->AddCircleFilled(ImVec2(shot.muzzle_x, shot.muzzle_y), radius, IM_COL32(255, 235, 160, static_cast<int>(240 * fade)), 16);
+    }
+    if (shot.muzzle_visible && shot.impact_visible && shot.shot_age < kTracerTime) {
+        const float fade = 1.0f - shot.shot_age / kTracerTime;
+        draw->AddLine(ImVec2(shot.muzzle_x, shot.muzzle_y), ImVec2(shot.impact_x, shot.impact_y),
+            IM_COL32(255, 230, 150, static_cast<int>(200 * fade)), 2.0f);
+    }
+    if (shot.impact_visible && shot.shot_age < kSparkTime) {
+        const float t = shot.shot_age / kSparkTime;
+        const float reach = 4.0f + 14.0f * t;
+        const ImU32 spark = IM_COL32(255, 210, 120, static_cast<int>(255 * (1.0f - t)));
+        for (int k = 0; k < 6; ++k) {
+            const float angle = 3.14159265f * k / 3.0f + 0.5f;
+            draw->AddLine(ImVec2(shot.impact_x, shot.impact_y),
+                ImVec2(shot.impact_x + reach * std::cos(angle), shot.impact_y + reach * std::sin(angle)), spark, 1.5f);
+        }
+    }
+    if (shot.hit && shot.shot_age < kMarkerTime) {
+        // Hit marker: a small X at the centre of the view.
+        const ImVec2 centre = ImGui::GetMainViewport()->GetCenter();
+        const float fade = 1.0f - shot.shot_age / kMarkerTime;
+        const float size = 8.0f;
+        const ImU32 marker = IM_COL32(255, 70, 60, static_cast<int>(255 * fade));
+        draw->AddLine(ImVec2(centre.x - size, centre.y - size), ImVec2(centre.x + size, centre.y + size), marker, 2.5f);
+        draw->AddLine(ImVec2(centre.x + size, centre.y - size), ImVec2(centre.x - size, centre.y + size), marker, 2.5f);
+    }
 }
 
 void DebugUi::render() {

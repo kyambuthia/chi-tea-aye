@@ -111,10 +111,11 @@ public:
 
         debug_ui_.beginFrame();
         debug_ui_.draw(gameplay_, input_, renderer_.styleSettings(), frame_count_, dt,
-            renderer_.clipTime(), renderer_.clipDuration());
+            renderer_.playedClip(), renderer_.clipTime(), renderer_.clipDuration());
         if (wheel_open_) {
             debug_ui_.drawWeaponWheel(windowCentreX(), windowCentreY(), kWheelRadius, wheelSelection());
         }
+        debug_ui_.drawShotFeedback(shotFeedback());
 
 #if defined(__EMSCRIPTEN__)
         // The page owns the canvas size on web; keep the window matched to it.
@@ -150,6 +151,9 @@ public:
             case SDL_EVENT_KEY_UP:
                 // While the dev panel has the keyboard, keys go to it, not the game.
                 // Key releases always pass through, so no key is left stuck down.
+                if (e->type == SDL_EVENT_KEY_UP && e->key.scancode == SDL_SCANCODE_SPACE) {
+                    input_.fire_held = false;
+                }
                 if (e->key.scancode == SDL_SCANCODE_Q) {
                     if (e->type == SDL_EVENT_KEY_DOWN && !e->key.repeat && !debug_ui_.wantsKeyboard()) {
                         wheel_open_ = true;
@@ -167,7 +171,10 @@ public:
                     if (e->key.scancode == SDL_SCANCODE_2) input_.weapon_request = 1;
                     if (e->key.scancode == SDL_SCANCODE_3) input_.weapon_request = 2;
                     if (e->key.scancode == SDL_SCANCODE_F) input_.attack_pressed = true;
-                    if (e->key.scancode == SDL_SCANCODE_SPACE) input_.fire_pressed = true;
+                    if (e->key.scancode == SDL_SCANCODE_SPACE) {
+                        input_.fire_pressed = true;
+                        input_.fire_held = true;
+                    }
                     if (e->key.scancode == SDL_SCANCODE_C) input_.crouch_pressed = true;
                     if (e->key.scancode == SDL_SCANCODE_W) input_.tapped.w = true;
                     if (e->key.scancode == SDL_SCANCODE_A) input_.tapped.a = true;
@@ -195,7 +202,13 @@ public:
                 }
                 break;
             case SDL_EVENT_MOUSE_BUTTON_DOWN:
+                // Left fires (hold for automatic fire), middle drags the camera, right aims.
                 if (e->button.button == SDL_BUTTON_LEFT && e->button.which != SDL_TOUCH_MOUSEID &&
+                    !debug_ui_.wantsMouse()) {
+                    input_.fire_pressed = true;
+                    input_.fire_held = true;
+                }
+                if (e->button.button == SDL_BUTTON_MIDDLE && e->button.which != SDL_TOUCH_MOUSEID &&
                     !debug_ui_.wantsMouse()) {
                     input_.orbit_drag = true;
                 }
@@ -206,6 +219,9 @@ public:
                 break;
             case SDL_EVENT_MOUSE_BUTTON_UP:
                 if (e->button.button == SDL_BUTTON_LEFT) {
+                    input_.fire_held = false;
+                }
+                if (e->button.button == SDL_BUTTON_MIDDLE) {
                     input_.orbit_drag = false;
                 }
                 if (e->button.button == SDL_BUTTON_RIGHT) {
@@ -263,6 +279,33 @@ private:
         int h = 0;
         SDL_GetWindowSize(window_, nullptr, &h);
         return 0.5f * static_cast<float>(h);
+    }
+
+    // Screen position of a world point, in window points. False when it is behind the camera.
+    bool windowPoint(const float p[3], float& x, float& y) const {
+        float ndc_x = 0.0f;
+        float ndc_y = 0.0f;
+        if (!renderer_.projectPoint(p, ndc_x, ndc_y)) {
+            return false;
+        }
+        int w = 0;
+        int h = 0;
+        SDL_GetWindowSize(window_, &w, &h);
+        x = (ndc_x * 0.5f + 0.5f) * static_cast<float>(w);
+        y = (0.5f - ndc_y * 0.5f) * static_cast<float>(h);
+        return true;
+    }
+
+    // The shot's muzzle flash, tracer and impact, positioned on the window.
+    debug::ShotFeedback shotFeedback() const {
+        debug::ShotFeedback feedback;
+        const gameplay::GameState::ShotEvent& shot = gameplay_.lastShot();
+        feedback.shot_age = shot.age;
+        feedback.hit = shot.hit;
+        float muzzle[3];
+        feedback.muzzle_visible = renderer_.muzzlePoint(muzzle) && windowPoint(muzzle, feedback.muzzle_x, feedback.muzzle_y);
+        feedback.impact_visible = windowPoint(shot.impact, feedback.impact_x, feedback.impact_y);
+        return feedback;
     }
 
     // The weapon under the pointer, or -1 in the wheel's dead zone.

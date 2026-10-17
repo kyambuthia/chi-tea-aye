@@ -44,6 +44,15 @@ public:
     // The shooting range.
     const Targets& targets() const;
 
+    // The latest shot: where it ended, and whether it hit a target. age is the
+    // seconds since it was fired (large before the first shot).
+    struct ShotEvent {
+        float age = 1e9f;
+        bool hit = false;
+        float impact[3] = {0.0f, 0.0f, 0.0f};
+    };
+    const ShotEvent& lastShot() const;
+
     // The camera looks at this height standing, and lower when crouched.
     static constexpr float kStandLookHeight = 1.1f;
     static constexpr float kCrouchLookHeight = 0.7f;
@@ -63,6 +72,7 @@ public:
     float cameraTargetX() const;
     float cameraTargetZ() const;
     float cameraAzimuth() const;
+    // Pitch, including the recoil kick from the latest shots.
     float cameraPitch() const;
     float cameraDistance() const;
 
@@ -78,6 +88,9 @@ private:
     float yaw_ = 0.0f;
     float clip_time_ = 0.0f;
     bool crouched_ = false;
+    float fire_buffer_ = 0.0f;  // seconds a press stays ready for the next shot
+    float recoil_kick_ = 0.0f;  // radians the camera is kicked up, decaying after each shot
+    ShotEvent last_shot_;
     float look_height_ = 1.1f;  // smoothed: the camera's look height
     Clip clip_ = Clip::Idle;
     // W, A, S, D: seconds left to keep a tapped key active.

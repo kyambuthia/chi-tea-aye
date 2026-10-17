@@ -21,6 +21,11 @@ constexpr float kRunSpeed = 4.0f;
 constexpr float kCrouchSpeed = 0.9f;
 // The warrior is a disc this wide on the ground, so walls stop it short of their faces.
 constexpr float kPlayerRadius = 0.35f;
+// A press that arrives this early before the next shot is allowed still fires.
+constexpr float kFireBuffer = 0.15f;
+// Camera kick per shot, in radians, and how fast it settles.
+constexpr float kRecoilKick = 0.012f;
+constexpr float kRecoilSettle = 12.0f;
 // Lens distance kept between the camera and a wall it is pulled in front of.
 constexpr float kCameraWallMargin = 0.3f;
 constexpr float kTurnRate = 10.0f;             // radians per second
@@ -146,10 +151,27 @@ void GameState::update(const app::InputState& input, physics::Physics& physics, 
     if (input.attack_pressed) {
         weapon_.attack();
     }
-    if (input.fire_pressed && weapon_.fire()) {
-        const Ray ray = cameraRay();
-        targets_.shoot(ray, std::min(Targets::kRange, nearestWallDistance(ray)));
+    // Fire while the button is held, and take a press that came just before the
+    // next shot was allowed.
+    if (input.fire_pressed) {
+        fire_buffer_ = kFireBuffer;
     }
+    fire_buffer_ = std::max(0.0f, fire_buffer_ - delta_time);
+    if ((input.fire_held || fire_buffer_ > 0.0f) && weapon_.fire()) {
+        fire_buffer_ = 0.0f;
+        const Ray ray = cameraRay();
+        const float reach = std::min(Targets::kRange, nearestWallDistance(ray));
+        float impact = reach;
+        const bool hit = targets_.shoot(ray, reach, &impact);
+        last_shot_.age = 0.0f;
+        last_shot_.hit = hit;
+        for (int c = 0; c < 3; ++c) {
+            last_shot_.impact[c] = ray.origin[c] + ray.direction[c] * impact;
+        }
+        recoil_kick_ += kRecoilKick;
+    }
+    last_shot_.age += delta_time;
+    recoil_kick_ = approach(recoil_kick_, 0.0f, smoothingFactor(kRecoilSettle, delta_time));
     targets_.update(delta_time);
     weapon_.setAiming(input.aim_held);
     weapon_.update(delta_time);
@@ -170,7 +192,21 @@ void GameState::update(const app::InputState& input, physics::Physics& physics, 
     float desired_x = 0.0f;
     float desired_z = 0.0f;
     Clip next = Clip::Walk;
-    if (has_input) {
+    // With the rifle aimed or firing, the body faces the camera's direction, so
+    // shots and the view agree. While aiming, only movement toward the camera counts.
+    const bool facing_camera = weapon_.active() == WeaponSlot::Rifle && (weapon_.aim() > 0.5f || weapon_.firing());
+    const float camera_heading = camera_azimuth_ + kPi;  // the view looks along azimuth + pi
+    if (facing_camera) {
+        yaw_ = turnToward(yaw_, camera_heading, kTurnRate * delta_time);
+    }
+    if (has_input && facing_camera) {
+        const float along = dir_x * std::sin(camera_heading) + dir_z * std::cos(camera_heading);
+        const float amount = std::fmin(1.0f, std::fmax(0.0f, along));
+        next = crouched_ ? Clip::CrouchWalk : Clip::Walk;
+        const float speed = (crouched_ ? kCrouchSpeed : kWalkSpeed) * amount;
+        desired_x = std::sin(yaw_) * speed;
+        desired_z = std::cos(yaw_) * speed;
+    } else if (has_input) {
         const float input_heading = std::atan2(dir_x, dir_z);
         yaw_ = turnToward(yaw_, input_heading, kTurnRate * delta_time);
         const float align = std::fmax(0.0f, std::cos(angleBetween(yaw_, input_heading)));
@@ -299,8 +335,9 @@ float GameState::nearestWallDistance(const Ray& ray) const {
 
 float GameState::clearCameraDistance(float wanted_distance) const {
     // Ray from the look point toward the camera; a wall on it shortens the camera's distance.
-    const float cos_pitch = std::cos(camera_pitch_);
-    const float dir[3] = {std::sin(camera_azimuth_) * cos_pitch, std::sin(camera_pitch_), std::cos(camera_azimuth_) * cos_pitch};
+    const float pitch = cameraPitch();
+    const float cos_pitch = std::cos(pitch);
+    const float dir[3] = {std::sin(camera_azimuth_) * cos_pitch, std::sin(pitch), std::cos(camera_azimuth_) * cos_pitch};
     Ray ray{};
     ray.origin[0] = camera_target_x_;
     ray.origin[1] = look_height_;
@@ -319,11 +356,12 @@ Ray GameState::cameraRay() const {
     // The same eye position the renderer uses, including the aim pull-in and walls.
     const float aim = weapon_.aim();
     const float distance = clearCameraDistance(camera_distance_ * (1.0f - 0.35f * aim));
-    const float horizontal = distance * std::cos(camera_pitch_);
+    const float pitch = cameraPitch();
+    const float horizontal = distance * std::cos(pitch);
     const float look[3] = {camera_target_x_, look_height_, camera_target_z_};
     const float eye[3] = {
         look[0] + horizontal * std::sin(camera_azimuth_),
-        look[1] + distance * std::sin(camera_pitch_),
+        look[1] + distance * std::sin(pitch),
         look[2] + horizontal * std::cos(camera_azimuth_),
     };
     Ray ray{};
@@ -342,6 +380,10 @@ Ray GameState::cameraRay() const {
 
 const Targets& GameState::targets() const {
     return targets_;
+}
+
+const GameState::ShotEvent& GameState::lastShot() const {
+    return last_shot_;
 }
 
 void GameState::setAutoRecenter(bool enabled) {
@@ -397,7 +439,7 @@ float GameState::cameraAzimuth() const {
 }
 
 float GameState::cameraPitch() const {
-    return camera_pitch_;
+    return camera_pitch_ + recoil_kick_;
 }
 
 float GameState::cameraDistance() const {

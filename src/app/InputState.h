@@ -26,6 +26,7 @@ struct InputState {
     bool attack_pressed = false;
     bool fire_pressed = false;
     bool crouch_pressed = false;
+    bool fire_held = false;  // the fire button (left mouse or Space) is down
     bool aim_held = false;
     float look_dx = 0.0f;
     float look_dy = 0.0f;

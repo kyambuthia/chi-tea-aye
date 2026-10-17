@@ -441,6 +441,10 @@ struct Renderer::Impl {
     GLint toon_style = -1;
     GLint toon_eye = -1;
     float clip_time = 0.0f;      // last frame: time within the clip, wrapped
+    const char* played_clip = "Idle";
+    Mat4 last_view_projection = math::identity();
+    bool muzzle_valid = false;
+    float muzzle[3] = {0.0f, 0.0f, 0.0f};
     float clip_duration = 0.0f;  // last frame: the clip length
     GLint toon_surface = -1;
 
@@ -631,6 +635,7 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     const Mat4 view = math::lookAt(eye_x, eye_y, eye_z, target_x, target_y, target_z);
     const float fov = (60.0f - 30.0f * aim) * kPi / 180.0f;
     const Mat4 view_projection = math::multiply(perspectiveFor(framebuffer_width, framebuffer_height, fov), view);
+    impl_->last_view_projection = view_projection;
 
     auto setToonSurface = [this](bool ground) {
         const float light[4] = {
@@ -701,6 +706,7 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
         clip_name = "RifleFire";
         clip_time = gameplay.weapon().fireProgress() * impl_->character->clipDuration("RifleFire");
     }
+    impl_->played_clip = clip_name;
     impl_->clip_duration = impl_->character->clipDuration(clip_name);
     impl_->clip_time = impl_->clip_duration > 0.0f ? std::fmod(clip_time, impl_->clip_duration) : 0.0f;
     // A held rifle is placed from the right hand first, then the left arm reaches
@@ -709,6 +715,7 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     const bool rifle_held = impl_->hand_joint >= 0 && weapon.active() == gameplay::WeaponSlot::Rifle &&
         impl_->rifle_mesh.index_count > 0;
     impl_->character->evaluatePose(clip_name, clip_time, root, impl_->ground_height, impl_->joint_matrices);
+    impl_->muzzle_valid = false;
     Mat4 rifle_model = math::identity();
     if (rifle_held) {
         const Mat4 hand = math::multiply(impl_->joint_matrices[impl_->hand_joint],
@@ -726,6 +733,13 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
             r.m[1] * p[0] + r.m[5] * p[1] + r.m[9] * p[2] + r.m[13],
             r.m[2] * p[0] + r.m[6] * p[1] + r.m[10] * p[2] + r.m[14]};
         impl_->character->evaluatePose(clip_name, clip_time, root, impl_->ground_height, impl_->joint_matrices, fore);
+        // The muzzle is the rifle's -Z end, half its 0.95 m length from the centre.
+        const float tip[3] = {0.0f, 0.0f, -0.475f};
+        const float* m = rifle_model.m;
+        impl_->muzzle[0] = m[0] * tip[0] + m[4] * tip[1] + m[8] * tip[2] + m[12];
+        impl_->muzzle[1] = m[1] * tip[0] + m[5] * tip[1] + m[9] * tip[2] + m[13];
+        impl_->muzzle[2] = m[2] * tip[0] + m[6] * tip[1] + m[10] * tip[2] + m[14];
+        impl_->muzzle_valid = true;
     }
     const Mat4 model = math::identity();
     glUniformMatrix4fv(impl_->toon_joints, kJoints, GL_FALSE, impl_->joint_matrices[0].m);
@@ -785,12 +799,21 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
         setToonSurface(false);
         glBindVertexArray(impl_->cube_mesh.vao);
         for (const gameplay::Target& target : gameplay.targets().targets()) {
-            if (!target.standing) {
-                continue;
+            if (!target.standing && target.time_down >= gameplay::Targets::kFallTime) {
+                continue;  // knocked down and gone until it respawns
             }
-            const float no_rotation[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+            // A hit target tips over about its base, faster as it goes, before it disappears.
+            float tilt = 0.0f;
+            if (!target.standing) {
+                const float t = target.time_down / gameplay::Targets::kFallTime;
+                tilt = 0.5f * kPi * t * t;
+            }
+            const float half_height = 0.5f * target.height;
+            const float base[3] = {target.center[0], target.center[1] - half_height, target.center[2]};
+            const float centre[3] = {base[0], base[1] + half_height * std::cos(tilt), base[2] + half_height * std::sin(tilt)};
+            const float axis_half[4] = {std::sin(0.5f * tilt), 0.0f, 0.0f, std::cos(0.5f * tilt)};
             const float size[3] = {target.size, target.height, target.size};
-            const Mat4 model = math::fromTrs(target.center, no_rotation, size);
+            const Mat4 model = math::fromTrs(centre, axis_half, size);
             glUniformMatrix4fv(impl_->toon_mvp, 1, GL_FALSE, math::multiply(view_projection, model).m);
             glUniformMatrix4fv(impl_->toon_model, 1, GL_FALSE, model.m);
             glDrawElements(GL_TRIANGLES, impl_->cube_mesh.index_count, GL_UNSIGNED_SHORT, nullptr);
@@ -868,6 +891,30 @@ float Renderer::clipTime() const {
 
 float Renderer::clipDuration() const {
     return impl_->clip_duration;
+}
+
+const char* Renderer::playedClip() const {
+    return impl_->played_clip;
+}
+
+bool Renderer::projectPoint(const float p[3], float& ndc_x, float& ndc_y) const {
+    const float* m = impl_->last_view_projection.m;
+    const float w = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
+    if (w <= 1e-4f) {
+        return false;
+    }
+    ndc_x = (m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12]) / w;
+    ndc_y = (m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13]) / w;
+    return true;
+}
+
+bool Renderer::muzzlePoint(float out[3]) const {
+    if (impl_->muzzle_valid) {
+        out[0] = impl_->muzzle[0];
+        out[1] = impl_->muzzle[1];
+        out[2] = impl_->muzzle[2];
+    }
+    return impl_->muzzle_valid;
 }
 
 StyleSettings& Renderer::styleSettings() {

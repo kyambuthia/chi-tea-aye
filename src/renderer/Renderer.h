@@ -37,6 +37,13 @@ public:
     // The clip the last frame played: its time within the clip (wrapped for loops) and its length.
     float clipTime() const;
     float clipDuration() const;
+    // The clip the last frame played, by name (the rifle's fire clip shows here while shooting).
+    const char* playedClip() const;
+    // Screen position of a world point in normalised device coordinates (-1 to 1, y up).
+    // Returns false when the point is behind the camera.
+    bool projectPoint(const float p[3], float& ndc_x, float& ndc_y) const;
+    // The rifle's muzzle this frame. Returns false when no rifle is held.
+    bool muzzlePoint(float out[3]) const;
     void cleanup();
 
 private:

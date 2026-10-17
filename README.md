@@ -15,14 +15,15 @@ Minimal C++20 SDL3 game prototype.
 ## Controls
 
 - WASD: move. Hold Shift to run.
-- Mouse: hold the left button and drag to orbit the camera; scroll to zoom.
+- Mouse: hold the middle button and drag to orbit the camera; scroll to zoom. Left button fires (hold for automatic fire). Right button aims.
 - Touch: drag the left half of the screen to move; drag the right half to orbit.
 - Weapons: 1 rifle, 2 pistol, 3 fists. Switching lowers the old weapon and raises the new one.
 - Fists: F to punch.
 - Rifle: hold the right mouse button to aim down the scope (the view narrows and the scope overlay appears).
-- Rifle fire: Space fires one shot. The warrior plays the fire clip with the rifle held.
+- Rifle fire: left button or Space fires, about eight rounds a second while held. A crosshair sits at the centre of the view, and the shot goes where it points. A shot shows a muzzle flash, a tracer, an impact spark, and a hit marker when it hits a target. The warrior turns to face the camera while aiming or firing.
+- Crouch: C toggles crouching. Crouched, the warrior walks slower and the view drops. Stand up to shoot over the low wall.
 - Weapon wheel: hold Q, point at a sector (rifle top, pistol right, fists bottom or left), and release Q to pick it. Releasing in the centre picks nothing.
-- Target practice: six pop-up targets stand in front of the start point. Space fires at the centre of the view, so line up a target with the view centre (aim by orbiting the camera and zooming, or hold the right mouse button with the rifle). Knocked-down targets stand again after three seconds. The dev panel counts hits and shots.
+- Target practice: six pop-up targets stand in front of the start point. Shots go to the centre of the view, so line up a target with the crosshair (orbit the camera, or hold the right button to aim down the scope). Knocked-down targets stand again after three seconds. The dev panel counts hits and shots.
 - Camera: auto-recenter is off by default, so the camera keeps the angle you set. Turn it on in the dev panel to return to behind the warrior after orbiting.
 - F1: toggle the skeleton overlay (joints and bones), which also shows the current clip.
 

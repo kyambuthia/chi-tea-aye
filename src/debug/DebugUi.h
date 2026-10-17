@@ -18,14 +18,26 @@ struct StyleSettings;
 
 namespace debug {
 
+// Where a shot's effects go on the window, in window points.
+struct ShotFeedback {
+    float shot_age = 1e9f;   // seconds since the shot; large before the first one
+    bool hit = false;        // the shot hit a target
+    bool muzzle_visible = false;
+    float muzzle_x = 0.0f, muzzle_y = 0.0f;
+    bool impact_visible = false;
+    float impact_x = 0.0f, impact_y = 0.0f;
+};
+
 class DebugUi {
 public:
     // Requires the GL context to be current; glsl_version is e.g. "#version 330".
     void init(SDL_Window* window, SDL_GLContext context, const char* glsl_version);
     void beginFrame();
-    // clip_time and clip_duration describe the clip as the renderer last played it.
+    // played_clip, clip_time and clip_duration describe the clip as the renderer last played it.
     void draw(const gameplay::GameState& gameplay, const app::InputState& input, renderer::StyleSettings& style, uint64_t frame_count, float delta_time,
-        float clip_time, float clip_duration);
+        const char* played_clip, float clip_time, float clip_duration);
+    // The muzzle flash, tracer, impact spark and hit marker of the latest shot.
+    void drawShotFeedback(const ShotFeedback& shot);
     void render();
     bool handleEvent(const SDL_Event* event);
     bool wantsMouse() const;
