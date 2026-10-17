@@ -128,6 +128,9 @@ void GameState::update(const app::InputState& input, physics::Physics& physics, 
     if (input.attack_pressed) {
         weapon_.attack();
     }
+    if (input.fire_pressed) {
+        weapon_.fire();
+    }
     weapon_.setAiming(input.aim_held);
     weapon_.update(delta_time);
 

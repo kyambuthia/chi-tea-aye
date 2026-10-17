@@ -20,6 +20,7 @@ Minimal C++20 SDL3 game prototype.
 - Weapons: 1 rifle, 2 pistol, 3 fists. Switching lowers the old weapon and raises the new one.
 - Fists: F to punch.
 - Rifle: hold the right mouse button to aim down the scope (the view narrows and the scope overlay appears).
+- Rifle fire: Space fires one shot. The warrior plays the fire clip with the rifle held.
 - F1: toggle the skeleton overlay (joints and bones), which also shows the current clip.
 
 The warrior model is `assets/characters/african_warrior.glb`, and the weapon props are

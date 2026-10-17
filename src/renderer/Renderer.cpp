@@ -624,6 +624,11 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
         clip_name = "PunchCombo";
         clip_time = gameplay.weapon().attackProgress() * impl_->character->clipDuration("PunchCombo");
     }
+    // A shot plays its fire clip over the rifle's locomotion, if the asset has it.
+    if (gameplay.weapon().firing() && impl_->character->hasClip("RifleFire")) {
+        clip_name = "RifleFire";
+        clip_time = gameplay.weapon().fireProgress() * impl_->character->clipDuration("RifleFire");
+    }
     // A held rifle is placed from the right hand first, then the left arm reaches
     // its fore-end: two passes, because the left hand goal depends on the rifle.
     const gameplay::WeaponState& weapon = gameplay.weapon();

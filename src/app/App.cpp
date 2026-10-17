@@ -102,6 +102,7 @@ public:
         input_.zoom_steps = 0.0f;
         input_.weapon_request = -1;
         input_.attack_pressed = false;
+        input_.fire_pressed = false;
 
         debug_ui_.beginFrame();
         debug_ui_.draw(gameplay_, input_, renderer_.styleSettings(), frame_count_, dt);
@@ -143,6 +144,7 @@ public:
                     if (e->key.scancode == SDL_SCANCODE_2) input_.weapon_request = 1;
                     if (e->key.scancode == SDL_SCANCODE_3) input_.weapon_request = 2;
                     if (e->key.scancode == SDL_SCANCODE_F) input_.attack_pressed = true;
+                    if (e->key.scancode == SDL_SCANCODE_SPACE) input_.fire_pressed = true;
                 }
                 if (e->key.scancode == SDL_SCANCODE_F1 && e->type == SDL_EVENT_KEY_DOWN && !e->key.repeat) {
                     renderer_.styleSettings().show_skeleton = !renderer_.styleSettings().show_skeleton;
