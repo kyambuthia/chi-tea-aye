@@ -3,6 +3,11 @@ build/
 *.swp
 .cache/
 compile_commands.json
+__pycache__/
+*.py[cod]
+*.blend1
+*.lpak
+.venv/
+.env
+.env.*
 build-web/
-build-asan/
-imgui.ini

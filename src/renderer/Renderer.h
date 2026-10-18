@@ -18,7 +18,7 @@ namespace renderer {
 struct StyleSettings {
     // Debug view: draws the warrior's joints and bones over the model.
     bool show_skeleton = true;
-    // Debug overlay: markers at the right hand, the rifle grip, fore-end and muzzle (F2).
+    // Debug overlay: markers at the right hand, rifle grip, fore-end and muzzle (F2).
     bool show_rifle_points = false;
     float light_x = -0.45f;
     float light_y = 0.80f;

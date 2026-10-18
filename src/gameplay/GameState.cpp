@@ -26,11 +26,10 @@ constexpr float kFireBuffer = 0.15f;
 // Camera kick per shot, in radians, and how fast it settles.
 constexpr float kRecoilKick = 0.012f;
 constexpr float kRecoilSettle = 12.0f;
-// Sight view: the eye at the right shoulder, the look point this far ahead along the aim.
-// The right hand's grip in the warrior's own frame (feet at the origin, facing +Z),
-// measured from the aim pose: the hand the solver reaches on the right arm. Carrying it
-// through the warrior's terrain frame keeps it in reach on slopes.
-constexpr float kGripModel[3] = {-0.1f, 1.28f, 0.098f};
+// Sight view: the eye at the grip-side shoulder, the look point this far ahead along the aim.
+// The rifle grip in the warrior's own frame (feet at the origin, facing +Z), measured
+// from the aim pose. Carrying it through the warrior's terrain frame keeps it in reach on slopes.
+constexpr float kGripModel[3] = {-0.12f, 1.38f, 0.2f};
 // The bore sits this far above the grip (matches the rifle's grip offset in the renderer).
 constexpr float kGripBelowBore = 0.05f;
 // Aimed sight: no turn of the aim (kAimYaw = 0 keeps the verified sight view).
@@ -38,7 +37,7 @@ constexpr float kAimYaw = 0.0f;
 // Orbit view: the look point sits this far to the warrior's left, so the crosshair at the
 // centre of the view falls left of the warrior. The eye stays put, so the shots follow.
 constexpr float kOrbitShift = 0.25f;
-// The eye sits this far behind the grip, this far above it and to the right, over the shoulder.
+// The eye sits behind the grip and over the grip-side shoulder.
 constexpr float kSightBack = 0.35f;
 constexpr float kSightUp = 0.1f;
 constexpr float kSightRight = 0.25f;
@@ -416,7 +415,7 @@ void GameState::cameraView(float eye[3], float look[3]) const {
     float grip[3];
     sightGrip(grip);
     // The rifle points along the view, so the crosshair marks where the barrel and the
-    // shots go. The eye sits over the right shoulder, outside the body, not on the bore:
+    // shots go. The eye sits over the grip-side shoulder, outside the body, not on the bore:
     // the arm is held at chest height, so an eye on the bore line would be inside the body.
     const float bore[3] = {grip[0], grip[1] + kGripBelowBore, grip[2]};
     const float right[3] = {std::cos(az), 0.0f, -std::sin(az)};

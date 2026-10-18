@@ -72,7 +72,7 @@ public:
     void cameraView(float eye[3], float look[3]) const;
 
     // The rifle's grip while aimed: a point on the aim line in front of the right
-    // shoulder. The right hand is solved onto it, and the eye sits behind it.
+    // shoulder. The rifle is placed on it, and the eye sits behind it.
     void sightGrip(float out[3]) const;
 
     // Third-person camera, already smoothed. The eye sits at the target plus

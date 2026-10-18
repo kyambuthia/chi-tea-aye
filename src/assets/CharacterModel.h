@@ -72,8 +72,7 @@ public:
     // posed character in world space, with the character placed by root.
     // With a ground function, the feet are solved onto the ground (foot IK) and
     // the pelvis drops when a foot needs to reach down. Unused slots are identity.
-    // With left_hand_goal (model-space world point), the left arm reaches it by two-bone
-    // IK: used to put the left hand on a held weapon's fore-end.
+    // Optional hand goals use two-bone IK to place an arm at a world point.
     // What to pose: a base clip, an optional upper-body layer, and a few adjustments.
     struct PoseRequest {
         const char* clip = "Idle";
