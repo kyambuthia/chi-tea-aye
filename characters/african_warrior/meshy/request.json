@@ -1,0 +1,24 @@
+{
+  "ai_model": "meshy-7.1",
+  "geometry_resolution": "standard",
+  "should_texture": true,
+  "enable_pbr": true,
+  "texture_resolution": "2k",
+  "should_remesh": true,
+  "topology": "triangle",
+  "target_polycount": 30000,
+  "pose_mode": "t-pose",
+  "image_enhancement": false,
+  "remove_lighting": true,
+  "moderation": true,
+  "target_formats": [
+    "glb",
+    "fbx",
+    "obj"
+  ],
+  "multi_view_thumbnails": true,
+  "image_files": [
+    "/home/mbuthi/Projects/mesh-gen/characters/african_warrior/references/front.png",
+    "/home/mbuthi/Projects/mesh-gen/characters/african_warrior/references/back.png"
+  ]
+}

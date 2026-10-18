@@ -1,0 +1,21 @@
+{
+  "blender_version": "3.0.0",
+  "height_metres": 1.85,
+  "vertices": 15582,
+  "triangles": 31153,
+  "bones": 23,
+  "deform_bones": 22,
+  "unweighted_vertices": 0,
+  "maximum_influences": 4,
+  "maximum_weight_sum_error": 4.470348358154297e-08,
+  "pose_moved_vertices": 6015,
+  "pose_maximum_displacement_metres": 0.7006250018035594,
+  "uv_layers": 1,
+  "materials": 1,
+  "limitations": [
+    "Body FK rig; no facial or individual finger rig",
+    "Starter procedural in-place animations require gameplay polish",
+    "Woven wrap is skinned with the body; no cloth simulation",
+    "Generated topology is not hand-retopologized"
+  ]
+}

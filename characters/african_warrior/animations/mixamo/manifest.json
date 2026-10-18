@@ -1,0 +1,184 @@
+{
+  "source": "https://www.mixamo.com/",
+  "downloaded_at": "2026-10-17",
+  "source_character": "Y Bot",
+  "format": "FBX Binary",
+  "skin": "Without Skin",
+  "fps": 30,
+  "keyframe_reduction": "none",
+  "status": "All 16 clips retargeted to AfricanWarrior_Rig, verified, and exported to IQM, GLB, and FBX",
+  "clips": [
+    {
+      "name": "idle",
+      "mixamo_title": "Breathing Idle",
+      "file": "idle.fbx",
+      "in_place_option": false,
+      "loop": true,
+      "bytes": 1106704,
+      "sha256": "dd704abb9c109cb2a3303b5123e323ae660196397781ca48fc10813adb1da0eb",
+      "runtime_name": "Idle"
+    },
+    {
+      "name": "walk",
+      "mixamo_title": "Walking",
+      "file": "walk.fbx",
+      "in_place_option": true,
+      "loop": true,
+      "bytes": 364928,
+      "sha256": "033abf1ddd63ab970f1aa88b8e61a13fcbbd6f3aee0715a3222f7b0a990796d2",
+      "runtime_name": "Walk"
+    },
+    {
+      "name": "run",
+      "mixamo_title": "Running",
+      "file": "run.fbx",
+      "in_place_option": true,
+      "loop": true,
+      "bytes": 331440,
+      "sha256": "db3d45d5b313ea5efc581bc549494e94162c8b6dac986ff6fc65806693f1ff6b",
+      "runtime_name": "Run"
+    },
+    {
+      "name": "jump",
+      "mixamo_title": "Standing Jump",
+      "file": "jump.fbx",
+      "in_place_option": false,
+      "loop": false,
+      "bytes": 526960,
+      "sha256": "6704d73e93d22253ba584d58c856d7602ebaf3589572fef0368b25e75200277e",
+      "runtime_name": "Jump"
+    },
+    {
+      "name": "strafe_left",
+      "mixamo_title": "Left Strafe Walk",
+      "source_download_filename": "Left Strafe Walk.fbx",
+      "file": "strafe_left.fbx",
+      "in_place_option": true,
+      "loop": true,
+      "bytes": 367088,
+      "sha256": "3dcc66fd33664e31b1c2410c87aeeaf2e7672718a9fff5318a5c7e832b08cef9",
+      "runtime_name": "StrafeLeft"
+    },
+    {
+      "name": "strafe_right",
+      "mixamo_title": "Right Strafe Walk",
+      "source_download_filename": "Right Strafe Walk.fbx",
+      "file": "strafe_right.fbx",
+      "in_place_option": false,
+      "loop": true,
+      "bytes": 366976,
+      "sha256": "6237a5991e557a02c966e240518fde066277ccd6971e2fd5b0a4e6329d845813",
+      "runtime_name": "StrafeRight"
+    },
+    {
+      "name": "walk_backwards",
+      "mixamo_title": "Walking Backwards",
+      "source_download_filename": "Walking Backwards.fbx",
+      "file": "walk_backwards.fbx",
+      "in_place_option": true,
+      "loop": true,
+      "bytes": 397216,
+      "sha256": "aa40eaac70fce28946460832bf1abb44039628a11d176d9652bd8ca362cd87bb",
+      "runtime_name": "WalkBackwards"
+    },
+    {
+      "name": "crouch_walk",
+      "mixamo_title": "Crouched Walking",
+      "source_download_filename": "Crouched Walking.fbx",
+      "file": "crouch_walk.fbx",
+      "in_place_option": true,
+      "loop": true,
+      "bytes": 344832,
+      "sha256": "da3c24d57bbe16cde648903175929aab81705b15d3fa490478af675f3c6c4545",
+      "runtime_name": "CrouchWalk"
+    },
+    {
+      "name": "punch_combo",
+      "mixamo_title": "Punch Combo",
+      "source_download_filename": "Punch Combo.fbx",
+      "file": "punch_combo.fbx",
+      "in_place_option": null,
+      "loop": false,
+      "bytes": 441712,
+      "sha256": "4b2a612a26975116df5e4243fced027b63f0d2cf706e36d0d46c88f593241276",
+      "runtime_name": "PunchCombo"
+    },
+    {
+      "name": "side_kick",
+      "mixamo_title": "Side Kick",
+      "source_download_filename": "Side Kick.fbx",
+      "file": "side_kick.fbx",
+      "in_place_option": null,
+      "loop": false,
+      "bytes": 423136,
+      "sha256": "8f195b68a1f9727d2fa3638548fe01e66bee430cdbb611c6722106db45627916",
+      "runtime_name": "SideKick"
+    },
+    {
+      "name": "block",
+      "mixamo_title": "Block",
+      "source_download_filename": "Block.fbx",
+      "file": "block.fbx",
+      "in_place_option": null,
+      "loop": false,
+      "bytes": 570736,
+      "sha256": "84422dfe480ad58fdb6b787d36147e58d43ae6b5bb74dfb7add6675aefa92515",
+      "runtime_name": "Block"
+    },
+    {
+      "name": "hit_reaction",
+      "mixamo_title": "Hit Reaction",
+      "source_download_filename": "Hit Reaction.fbx",
+      "file": "hit_reaction.fbx",
+      "in_place_option": null,
+      "loop": false,
+      "bytes": 384000,
+      "sha256": "987f2837ed252b0f7ede19ed273fae6acb97ea35fe0ff66b38c6e53c3134f39e",
+      "runtime_name": "HitReaction"
+    },
+    {
+      "name": "death",
+      "mixamo_title": "Death",
+      "source_download_filename": "Death.fbx",
+      "file": "death.fbx",
+      "in_place_option": null,
+      "loop": false,
+      "bytes": 602928,
+      "sha256": "f7539a61d91976e1b833c3e8ba88e31f232f728a1f115b4257a79976c574bb76",
+      "runtime_name": "Death"
+    },
+    {
+      "name": "dodge_back",
+      "mixamo_title": "Dodging Back",
+      "source_download_filename": "Dodging Back.fbx",
+      "file": "dodge_back.fbx",
+      "in_place_option": true,
+      "loop": false,
+      "bytes": 534736,
+      "sha256": "9d80f7195ec3aa0755cfd473e88f8a0b5957ebdc67d2f8b827800ad2a046fc52",
+      "runtime_name": "DodgeBack"
+    },
+    {
+      "name": "get_up",
+      "mixamo_title": "Getting Up",
+      "source_download_filename": "Getting Up.fbx",
+      "file": "get_up.fbx",
+      "in_place_option": null,
+      "loop": false,
+      "bytes": 538160,
+      "sha256": "d3bb39ed748f193447748206110ad83ebdb0050c48f1af44cb4fc88e84d4ee6d",
+      "runtime_name": "GetUp"
+    },
+    {
+      "name": "pick_up",
+      "mixamo_title": "Picking Up",
+      "source_download_filename": "Picking Up.fbx",
+      "file": "pick_up.fbx",
+      "in_place_option": null,
+      "loop": false,
+      "bytes": 1035184,
+      "sha256": "25c228d33a605a5b248e51a95104a5b30e2a4fa3e5df0069a035b0177c3eaaaf",
+      "runtime_name": "PickUp"
+    }
+  ]
+}

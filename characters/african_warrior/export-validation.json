@@ -1,0 +1,78 @@
+{
+  "glb_manifest": {
+    "animations": [
+      "Idle",
+      "Run",
+      "Walk"
+    ],
+    "joints": 23,
+    "embedded_images": 3
+  },
+  "glb_round_trip": {
+    "bones": 23,
+    "meshes": 1,
+    "actions": {
+      "Idle_AfricanWarrior_Rig": {
+        "frames": [
+          1.0,
+          61.0
+        ],
+        "arm_matrix_change": 0.06507844477891922,
+        "skin_maximum_displacement": 0.0173397611806534
+      },
+      "Run_AfricanWarrior_Rig": {
+        "frames": [
+          1.0,
+          33.0
+        ],
+        "arm_matrix_change": 1.6400592550635338,
+        "skin_maximum_displacement": 0.5912057423511485
+      },
+      "Walk_AfricanWarrior_Rig": {
+        "frames": [
+          1.0,
+          49.0
+        ],
+        "arm_matrix_change": 0.8922069743275642,
+        "skin_maximum_displacement": 0.3460322493431919
+      }
+    },
+    "loaded_texture_nodes": 3
+  },
+  "fbx_round_trip": {
+    "bones": 23,
+    "meshes": 1,
+    "actions": {
+      "AfricanWarrior_Rig|Idle|Idle": {
+        "frames": [
+          1.0,
+          61.0
+        ],
+        "arm_matrix_change": 0.0650782659649849,
+        "skin_maximum_displacement": 0.01733975404726191
+      },
+      "AfricanWarrior_Rig|Run|Run": {
+        "frames": [
+          1.0,
+          33.0
+        ],
+        "arm_matrix_change": 1.6400614529848099,
+        "skin_maximum_displacement": 0.5912082328676594
+      },
+      "AfricanWarrior_Rig|Walk|Walk": {
+        "frames": [
+          1.0,
+          49.0
+        ],
+        "arm_matrix_change": 0.8922086805105209,
+        "skin_maximum_displacement": 0.34603394326811143
+      }
+    },
+    "loaded_texture_nodes": 2
+  },
+  "blend_source": {
+    "blender_version": "3.0.0",
+    "packed_images": 3,
+    "active_action": "Idle"
+  }
+}

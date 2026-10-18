@@ -1,0 +1,165 @@
+{
+  "blender_version": "3.0.0",
+  "clips": {
+    "Idle": {
+      "frames": 299,
+      "fps": 30,
+      "loop": true,
+      "mapped_bones": 22,
+      "maximum_rotation_error_radians": 1.7484556025237907e-07,
+      "minimum_skin_z": -1.8044374883174896e-09,
+      "maximum_skin_z": 1.8325212001800537,
+      "maximum_airborne_clearance": 5.6304328609257936e-05
+    },
+    "Walk": {
+      "frames": 32,
+      "fps": 30,
+      "loop": true,
+      "mapped_bones": 22,
+      "maximum_rotation_error_radians": 1.7484556025237907e-07,
+      "minimum_skin_z": -2.3865140974521637e-08,
+      "maximum_skin_z": 1.8538570404052734,
+      "maximum_airborne_clearance": 0.023120254278182983
+    },
+    "Run": {
+      "frames": 22,
+      "fps": 30,
+      "loop": true,
+      "mapped_bones": 22,
+      "maximum_rotation_error_radians": 1.7484556025237907e-07,
+      "minimum_skin_z": 5.0640664994716644e-09,
+      "maximum_skin_z": 1.9102320671081543,
+      "maximum_airborne_clearance": 0.1695598065853119
+    },
+    "Jump": {
+      "frames": 72,
+      "fps": 30,
+      "loop": false,
+      "mapped_bones": 22,
+      "maximum_rotation_error_radians": 1.7484556025237907e-07,
+      "minimum_skin_z": -2.7852365747094154e-08,
+      "maximum_skin_z": 2.197387218475342,
+      "maximum_airborne_clearance": 0.7708777189254761
+    },
+    "StrafeLeft": {
+      "frames": 29,
+      "fps": 30,
+      "loop": true,
+      "mapped_bones": 22,
+      "maximum_rotation_error_radians": 1.7484556025237907e-07,
+      "minimum_skin_z": 3.236345946788788e-08,
+      "maximum_skin_z": 1.851957082748413,
+      "maximum_airborne_clearance": 0.021425744518637657
+    },
+    "StrafeRight": {
+      "frames": 29,
+      "fps": 30,
+      "loop": true,
+      "mapped_bones": 22,
+      "maximum_rotation_error_radians": 1.7484556025237907e-07,
+      "minimum_skin_z": -5.6228600442409515e-08,
+      "maximum_skin_z": 1.851817011833191,
+      "maximum_airborne_clearance": 0.023522766306996346
+    },
+    "WalkBackwards": {
+      "frames": 37,
+      "fps": 30,
+      "loop": true,
+      "mapped_bones": 22,
+      "maximum_rotation_error_radians": 1.7484556025237907e-07,
+      "minimum_skin_z": 2.246815711259842e-08,
+      "maximum_skin_z": 1.798915982246399,
+      "maximum_airborne_clearance": 0.004127933643758297
+    },
+    "CrouchWalk": {
+      "frames": 32,
+      "fps": 30,
+      "loop": true,
+      "mapped_bones": 22,
+      "maximum_rotation_error_radians": 1.7484556025237907e-07,
+      "minimum_skin_z": 2.0954757928848267e-09,
+      "maximum_skin_z": 1.5583603382110596,
+      "maximum_airborne_clearance": 0.011149493046104908
+    },
+    "PunchCombo": {
+      "frames": 67,
+      "fps": 30,
+      "loop": false,
+      "mapped_bones": 22,
+      "maximum_rotation_error_radians": 1.7484556025237907e-07,
+      "minimum_skin_z": 2.1012965589761734e-08,
+      "maximum_skin_z": 1.68923020362854,
+      "maximum_airborne_clearance": 1.1012889444828033e-06
+    },
+    "SideKick": {
+      "frames": 61,
+      "fps": 30,
+      "loop": false,
+      "mapped_bones": 22,
+      "maximum_rotation_error_radians": 1.7484556025237907e-07,
+      "minimum_skin_z": 1.4086253941059113e-08,
+      "maximum_skin_z": 1.726640224456787,
+      "maximum_airborne_clearance": 0.01999829337000847
+    },
+    "Block": {
+      "frames": 87,
+      "fps": 30,
+      "loop": false,
+      "mapped_bones": 22,
+      "maximum_rotation_error_radians": 1.7484556025237907e-07,
+      "minimum_skin_z": -1.6298145055770874e-08,
+      "maximum_skin_z": 1.700371265411377,
+      "maximum_airborne_clearance": 4.8465735744684935e-06
+    },
+    "HitReaction": {
+      "frames": 14,
+      "fps": 30,
+      "loop": false,
+      "mapped_bones": 22,
+      "maximum_rotation_error_radians": 1.7484556025237907e-07,
+      "minimum_skin_z": -1.2922100722789764e-08,
+      "maximum_skin_z": 1.7722762823104858,
+      "maximum_airborne_clearance": 1.3736425898969173e-05
+    },
+    "Death": {
+      "frames": 92,
+      "fps": 30,
+      "loop": false,
+      "mapped_bones": 22,
+      "maximum_rotation_error_radians": 1.7484556025237907e-07,
+      "minimum_skin_z": 2.741580829024315e-08,
+      "maximum_skin_z": 1.7693525552749634,
+      "maximum_airborne_clearance": 0.5538575053215027
+    },
+    "DodgeBack": {
+      "frames": 81,
+      "fps": 30,
+      "loop": false,
+      "mapped_bones": 22,
+      "maximum_rotation_error_radians": 1.7484556025237907e-07,
+      "minimum_skin_z": 1.9208528101444244e-08,
+      "maximum_skin_z": 1.859562635421753,
+      "maximum_airborne_clearance": 0.08817785978317261
+    },
+    "GetUp": {
+      "frames": 82,
+      "fps": 30,
+      "loop": false,
+      "mapped_bones": 22,
+      "maximum_rotation_error_radians": 1.7484556025237907e-07,
+      "minimum_skin_z": -3.341119736433029e-08,
+      "maximum_skin_z": 1.7590513229370117,
+      "maximum_airborne_clearance": 0.09496951103210449
+    },
+    "PickUp": {
+      "frames": 288,
+      "fps": 30,
+      "loop": false,
+      "mapped_bones": 22,
+      "maximum_rotation_error_radians": 1.7484556025237907e-07,
+      "minimum_skin_z": 2.6775524020195007e-09,
+      "maximum_skin_z": 1.8284239768981934,
+      "maximum_airborne_clearance": 2.336222678422928e-05
+    }
+  }
+}

@@ -1,0 +1,495 @@
+{
+  "raw_download_checksums": "passed",
+  "iqm": {
+    "bones": 23,
+    "frames": 1324,
+    "clips": {
+      "Idle": {
+        "first": 0,
+        "frames": 299,
+        "fps": 30.0,
+        "flags": 1
+      },
+      "Walk": {
+        "first": 299,
+        "frames": 32,
+        "fps": 30.0,
+        "flags": 1
+      },
+      "Run": {
+        "first": 331,
+        "frames": 22,
+        "fps": 30.0,
+        "flags": 1
+      },
+      "Jump": {
+        "first": 353,
+        "frames": 72,
+        "fps": 30.0,
+        "flags": 0
+      },
+      "StrafeLeft": {
+        "first": 425,
+        "frames": 29,
+        "fps": 30.0,
+        "flags": 1
+      },
+      "StrafeRight": {
+        "first": 454,
+        "frames": 29,
+        "fps": 30.0,
+        "flags": 1
+      },
+      "WalkBackwards": {
+        "first": 483,
+        "frames": 37,
+        "fps": 30.0,
+        "flags": 1
+      },
+      "CrouchWalk": {
+        "first": 520,
+        "frames": 32,
+        "fps": 30.0,
+        "flags": 1
+      },
+      "PunchCombo": {
+        "first": 552,
+        "frames": 67,
+        "fps": 30.0,
+        "flags": 0
+      },
+      "SideKick": {
+        "first": 619,
+        "frames": 61,
+        "fps": 30.0,
+        "flags": 0
+      },
+      "Block": {
+        "first": 680,
+        "frames": 87,
+        "fps": 30.0,
+        "flags": 0
+      },
+      "HitReaction": {
+        "first": 767,
+        "frames": 14,
+        "fps": 30.0,
+        "flags": 0
+      },
+      "Death": {
+        "first": 781,
+        "frames": 92,
+        "fps": 30.0,
+        "flags": 0
+      },
+      "DodgeBack": {
+        "first": 873,
+        "frames": 81,
+        "fps": 30.0,
+        "flags": 0
+      },
+      "GetUp": {
+        "first": 954,
+        "frames": 82,
+        "fps": 30.0,
+        "flags": 0
+      },
+      "PickUp": {
+        "first": 1036,
+        "frames": 288,
+        "fps": 30.0,
+        "flags": 0
+      }
+    }
+  },
+  "blend": {
+    "Idle": {
+      "frames": [
+        1.0,
+        299.0
+      ],
+      "maximum_sampled_skin_motion": 0.09391897123490152,
+      "minimum_sampled_skin_z": 2.2089079720899463e-07
+    },
+    "Walk": {
+      "frames": [
+        1.0,
+        32.0
+      ],
+      "maximum_sampled_skin_motion": 0.6510932761886028,
+      "minimum_sampled_skin_z": 0.002020143438130617
+    },
+    "Run": {
+      "frames": [
+        1.0,
+        22.0
+      ],
+      "maximum_sampled_skin_motion": 0.8448745665409523,
+      "minimum_sampled_skin_z": 0.0019191824831068516
+    },
+    "Jump": {
+      "frames": [
+        1.0,
+        72.0
+      ],
+      "maximum_sampled_skin_motion": 0.787516410522184,
+      "minimum_sampled_skin_z": -2.7852365747094154e-08
+    },
+    "StrafeLeft": {
+      "frames": [
+        1.0,
+        29.0
+      ],
+      "maximum_sampled_skin_motion": 0.9406949458460884,
+      "minimum_sampled_skin_z": 0.00792259257286787
+    },
+    "StrafeRight": {
+      "frames": [
+        1.0,
+        29.0
+      ],
+      "maximum_sampled_skin_motion": 0.8386284519837617,
+      "minimum_sampled_skin_z": 0.006644984241575003
+    },
+    "WalkBackwards": {
+      "frames": [
+        1.0,
+        37.0
+      ],
+      "maximum_sampled_skin_motion": 0.49334873834917176,
+      "minimum_sampled_skin_z": 0.0015101057942956686
+    },
+    "CrouchWalk": {
+      "frames": [
+        1.0,
+        32.0
+      ],
+      "maximum_sampled_skin_motion": 0.4643120088506636,
+      "minimum_sampled_skin_z": 0.0028190258890390396
+    },
+    "PunchCombo": {
+      "frames": [
+        1.0,
+        67.0
+      ],
+      "maximum_sampled_skin_motion": 0.37216508214106875,
+      "minimum_sampled_skin_z": 1.457519829273224e-07
+    },
+    "SideKick": {
+      "frames": [
+        1.0,
+        61.0
+      ],
+      "maximum_sampled_skin_motion": 1.6929056798385322,
+      "minimum_sampled_skin_z": 0.000404282589443028
+    },
+    "Block": {
+      "frames": [
+        1.0,
+        87.0
+      ],
+      "maximum_sampled_skin_motion": 0.17637698781631234,
+      "minimum_sampled_skin_z": -1.6298145055770874e-08
+    },
+    "HitReaction": {
+      "frames": [
+        1.0,
+        14.0
+      ],
+      "maximum_sampled_skin_motion": 0.1851312095221216,
+      "minimum_sampled_skin_z": 3.9604492485523224e-07
+    },
+    "Death": {
+      "frames": [
+        1.0,
+        92.0
+      ],
+      "maximum_sampled_skin_motion": 2.1707905525036204,
+      "minimum_sampled_skin_z": 6.052432581782341e-07
+    },
+    "DodgeBack": {
+      "frames": [
+        1.0,
+        81.0
+      ],
+      "maximum_sampled_skin_motion": 0.8473027795389659,
+      "minimum_sampled_skin_z": 0.000345775973983109
+    },
+    "GetUp": {
+      "frames": [
+        1.0,
+        82.0
+      ],
+      "maximum_sampled_skin_motion": 1.099468377717175,
+      "minimum_sampled_skin_z": 0.001709556789137423
+    },
+    "PickUp": {
+      "frames": [
+        1.0,
+        288.0
+      ],
+      "maximum_sampled_skin_motion": 1.3296348999828387,
+      "minimum_sampled_skin_z": 1.6451813280582428e-06
+    }
+  },
+  "glb_round_trip": {
+    "Block_AfricanWarrior_Rig": {
+      "frames": [
+        0.8000000715255737,
+        69.60000610351562
+      ],
+      "maximum_sampled_skin_motion": 0.23916638498326118,
+      "minimum_sampled_skin_z": -3.21545812766999e-05
+    },
+    "CrouchWalk_AfricanWarrior_Rig": {
+      "frames": [
+        0.8000000715255737,
+        25.60000228881836
+      ],
+      "maximum_sampled_skin_motion": 0.4495335315680257,
+      "minimum_sampled_skin_z": 0.0028926688246428967
+    },
+    "Death_AfricanWarrior_Rig": {
+      "frames": [
+        0.8000000715255737,
+        73.5999984741211
+      ],
+      "maximum_sampled_skin_motion": 2.17113865918812,
+      "minimum_sampled_skin_z": 2.2540831423611962e-07
+    },
+    "DodgeBack_AfricanWarrior_Rig": {
+      "frames": [
+        0.8000000715255737,
+        64.80000305175781
+      ],
+      "maximum_sampled_skin_motion": 0.8214886300407132,
+      "minimum_sampled_skin_z": -0.00013815599959343672
+    },
+    "GetUp_AfricanWarrior_Rig": {
+      "frames": [
+        0.8000000715255737,
+        65.5999984741211
+      ],
+      "maximum_sampled_skin_motion": 1.0978771900306956,
+      "minimum_sampled_skin_z": 0.0006362347048707306
+    },
+    "HitReaction_AfricanWarrior_Rig": {
+      "frames": [
+        0.8000000715255737,
+        11.199999809265137
+      ],
+      "maximum_sampled_skin_motion": 0.1634597858887429,
+      "minimum_sampled_skin_z": -1.0420656508358661e-05
+    },
+    "Idle_AfricanWarrior_Rig": {
+      "frames": [
+        0.8000000715255737,
+        239.19998168945312
+      ],
+      "maximum_sampled_skin_motion": 0.09601256024242372,
+      "minimum_sampled_skin_z": 1.805165084078908e-08
+    },
+    "Jump_AfricanWarrior_Rig": {
+      "frames": [
+        0.8000000715255737,
+        57.60000228881836
+      ],
+      "maximum_sampled_skin_motion": 0.7553243682546188,
+      "minimum_sampled_skin_z": -0.0015112946275621653
+    },
+    "PickUp_AfricanWarrior_Rig": {
+      "frames": [
+        0.8000000715255737,
+        230.40000915527344
+      ],
+      "maximum_sampled_skin_motion": 1.3305456576348222,
+      "minimum_sampled_skin_z": -2.7048808988183737e-06
+    },
+    "PunchCombo_AfricanWarrior_Rig": {
+      "frames": [
+        0.8000000715255737,
+        53.599998474121094
+      ],
+      "maximum_sampled_skin_motion": 0.353936498077742,
+      "minimum_sampled_skin_z": -0.00020060280803591013
+    },
+    "Run_AfricanWarrior_Rig": {
+      "frames": [
+        0.8000000715255737,
+        17.600000381469727
+      ],
+      "maximum_sampled_skin_motion": 0.8176085701268666,
+      "minimum_sampled_skin_z": -0.0034528071992099285
+    },
+    "SideKick_AfricanWarrior_Rig": {
+      "frames": [
+        0.8000000715255737,
+        48.79999923706055
+      ],
+      "maximum_sampled_skin_motion": 1.6530860897201063,
+      "minimum_sampled_skin_z": 0.0003739161475095898
+    },
+    "StrafeLeft_AfricanWarrior_Rig": {
+      "frames": [
+        0.8000000715255737,
+        23.19999885559082
+      ],
+      "maximum_sampled_skin_motion": 0.8756865597603746,
+      "minimum_sampled_skin_z": 0.006780017167329788
+    },
+    "StrafeRight_AfricanWarrior_Rig": {
+      "frames": [
+        0.8000000715255737,
+        23.19999885559082
+      ],
+      "maximum_sampled_skin_motion": 0.790354268700252,
+      "minimum_sampled_skin_z": 0.007486796472221613
+    },
+    "Walk_AfricanWarrior_Rig": {
+      "frames": [
+        0.8000000715255737,
+        25.60000228881836
+      ],
+      "maximum_sampled_skin_motion": 0.6257782162408686,
+      "minimum_sampled_skin_z": 0.0019737975671887398
+    },
+    "WalkBackwards_AfricanWarrior_Rig": {
+      "frames": [
+        0.8000000715255737,
+        29.600000381469727
+      ],
+      "maximum_sampled_skin_motion": 0.48285361519222836,
+      "minimum_sampled_skin_z": 0.0007424131035804749
+    }
+  },
+  "fbx_round_trip": {
+    "AfricanWarrior_Rig|Block|Block": {
+      "frames": [
+        1.0,
+        87.0
+      ],
+      "maximum_sampled_skin_motion": 0.176377498044731,
+      "minimum_sampled_skin_z": -3.9754090153110155e-07
+    },
+    "AfricanWarrior_Rig|CrouchWalk|CrouchWalk": {
+      "frames": [
+        1.0,
+        32.0
+      ],
+      "maximum_sampled_skin_motion": 0.4643121983998539,
+      "minimum_sampled_skin_z": 0.002817869884893298
+    },
+    "AfricanWarrior_Rig|Death|Death": {
+      "frames": [
+        1.0,
+        92.0
+      ],
+      "maximum_sampled_skin_motion": 2.170790423796233,
+      "minimum_sampled_skin_z": 1.5438081035767937e-08
+    },
+    "AfricanWarrior_Rig|DodgeBack|DodgeBack": {
+      "frames": [
+        1.0,
+        81.0
+      ],
+      "maximum_sampled_skin_motion": 0.8473022761228599,
+      "minimum_sampled_skin_z": 0.0003437643754296005
+    },
+    "AfricanWarrior_Rig|GetUp|GetUp": {
+      "frames": [
+        1.0,
+        82.0
+      ],
+      "maximum_sampled_skin_motion": 1.0994675891379038,
+      "minimum_sampled_skin_z": 0.0017094650538638234
+    },
+    "AfricanWarrior_Rig|HitReaction|HitReaction": {
+      "frames": [
+        1.0,
+        14.0
+      ],
+      "maximum_sampled_skin_motion": 0.18513106865521392,
+      "minimum_sampled_skin_z": -1.4537476999976207e-07
+    },
+    "AfricanWarrior_Rig|Idle|Idle": {
+      "frames": [
+        1.0,
+        299.0
+      ],
+      "maximum_sampled_skin_motion": 0.0939198814590207,
+      "minimum_sampled_skin_z": 2.89086045768272e-07
+    },
+    "AfricanWarrior_Rig|Jump|Jump": {
+      "frames": [
+        1.0,
+        72.0
+      ],
+      "maximum_sampled_skin_motion": 0.7875150818618777,
+      "minimum_sampled_skin_z": 7.969255193529534e-07
+    },
+    "AfricanWarrior_Rig|PickUp|PickUp": {
+      "frames": [
+        1.0,
+        288.0
+      ],
+      "maximum_sampled_skin_motion": 1.329633801700596,
+      "minimum_sampled_skin_z": 1.6765438886068296e-06
+    },
+    "AfricanWarrior_Rig|PunchCombo|PunchCombo": {
+      "frames": [
+        1.0,
+        67.0
+      ],
+      "maximum_sampled_skin_motion": 0.3721653786806594,
+      "minimum_sampled_skin_z": -2.28868373142177e-08
+    },
+    "AfricanWarrior_Rig|Run|Run": {
+      "frames": [
+        1.0,
+        22.0
+      ],
+      "maximum_sampled_skin_motion": 0.8448785069142655,
+      "minimum_sampled_skin_z": 0.001918641384691
+    },
+    "AfricanWarrior_Rig|SideKick|SideKick": {
+      "frames": [
+        1.0,
+        61.0
+      ],
+      "maximum_sampled_skin_motion": 1.6929125674844616,
+      "minimum_sampled_skin_z": 0.00040518425521440804
+    },
+    "AfricanWarrior_Rig|StrafeLeft|StrafeLeft": {
+      "frames": [
+        1.0,
+        29.0
+      ],
+      "maximum_sampled_skin_motion": 0.9406994316919439,
+      "minimum_sampled_skin_z": 0.007921688258647919
+    },
+    "AfricanWarrior_Rig|StrafeRight|StrafeRight": {
+      "frames": [
+        1.0,
+        29.0
+      ],
+      "maximum_sampled_skin_motion": 0.8386339150825355,
+      "minimum_sampled_skin_z": 0.00664487574249506
+    },
+    "AfricanWarrior_Rig|WalkBackwards|WalkBackwards": {
+      "frames": [
+        1.0,
+        37.0
+      ],
+      "maximum_sampled_skin_motion": 0.4933484339482484,
+      "minimum_sampled_skin_z": 0.0015103828627616167
+    },
+    "AfricanWarrior_Rig|Walk|Walk": {
+      "frames": [
+        1.0,
+        32.0
+      ],
+      "maximum_sampled_skin_motion": 0.6510952146880201,
+      "minimum_sampled_skin_z": 0.0020210084039717913
+    }
+  }
+}
