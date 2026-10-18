@@ -2,21 +2,27 @@
 
 ## Done
 
-- Create base repo structure.
-- Vendor minimal Sokol, Dear ImGui, stb, cgltf, and entt headers/sources.
-- Add Linux CMake target.
-- Add Sokol window lifecycle.
-- Render a colored triangle with `sokol_gfx`.
-- Track WASD and mouse position.
-- Show FPS, frame count, mouse position, key state, and player position in ImGui.
-- Add a minimal 3D render slice with perspective camera, depth testing, ground plane, and player cube.
-- Add a first stylized shader slice with toon lighting, ink outline, halftone controls, and ImGui tuning.
+- SDL3 app with desktop (GL 3.3) and web (WebGL 2, PWA) targets; one `scripts/verify.sh`.
+- Skinned warrior with ozz-animation clips, foot IK, weapon props, aiming and firing.
+- Target range, crouching, weapon wheel, low walls.
+- City generator, spatial grid with grid rays (`world_check`).
+- Raycast car: suspension, slip tyres, handbrake, crashes, sleeping, parking brake,
+  flip recovery (`vehicle_check`).
+- Enter and exit cars; driving on keyboard, gamepad and touch; chase camera; speed FOV;
+  trauma camera shake (`movement_check`).
+- Instanced, culled city rendering; procedural roads and facades; fog, sky, time of day;
+  contact shadows; MSAA; dynamic quality ladder (`render_math_check`).
+- HUD: minimap, speedometer, prompts, touch buttons (`hud_check`).
+- Pointer-lock mouse look, gamepad, analog touch stick, input dropped on focus loss.
+- Web durability: context loss, crash screen, WebGL 2 check, network-first service
+  worker, Esc no longer stops the web game, no per-frame GL queries from ImGui.
+
+## In progress
+
+- Playable scene on open terrain with the city off (`World{false}`), and the Y-Bot
+  character with a companion.
 
 ## Next
 
-- Add basic asset path configuration.
-- Add camera controls or a simple chase camera.
-- Add world bounds for the player cube.
-- Add normals/material data from loaded meshes instead of built-in geometry.
-- Add automated formatting or lint target.
-- Decide whether to keep vendored headers pinned manually or move to submodules.
+See `docs/roadmap.md`, in order: car audio, lights and damage; traffic and pedestrians;
+ragdolls; cover and drive-bys; streaming and LODs; sun shadows and bloom.
