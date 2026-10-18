@@ -107,7 +107,7 @@ public:
         gameplay_.init();
         gameplay_.placeTargets(world_);
         gameplay_.spawnVehicles(world_);
-        renderer_.init(assets_.character(), world_, assets_.rifle(), assets_.pistol());
+        renderer_.init(assets_.character(), assets_.ybot(), world_, assets_.rifle(), assets_.pistol());
         debug_ui_.init(window_, gl_context_, kGlslVersion);
         applyPageOptions();
 
@@ -416,6 +416,9 @@ private:
             }
             if (key.scancode == SDL_SCANCODE_F1) {
                 renderer_.styleSettings().show_skeleton = !renderer_.styleSettings().show_skeleton;
+            }
+            if (key.scancode == SDL_SCANCODE_F4) {
+                renderer_.styleSettings().character_model = 1 - renderer_.styleSettings().character_model;
             }
         }
         if (key.scancode == SDL_SCANCODE_ESCAPE && down) {

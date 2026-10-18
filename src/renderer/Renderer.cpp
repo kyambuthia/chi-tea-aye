@@ -353,15 +353,20 @@ struct Renderer::Impl {
     GpuMesh rifle_mesh;
     GpuMesh pistol_mesh;
     GpuMesh cube_mesh;  // shooting targets
+    GpuMesh ybot_mesh;
     GLuint rifle_texture = 0;
     GLuint pistol_texture = 0;
+    GLuint ybot_texture = 0;
     int hand_joint = -1;
+    int ybot_hand_joint = -1;
 
     const assets::CharacterModel* character = nullptr;
+    const assets::CharacterModel* ybot = nullptr;
     const world::World* world = nullptr;
     assets::GroundHeightFn ground_height;
     Mat4 joint_matrices[kJoints]{};
     StyleSettings style{};
+    float anim_time = 0.0f;
 
     CityPass city;
     PostPass post;
@@ -370,11 +375,15 @@ struct Renderer::Impl {
     Stats stats;
 };
 
-void Renderer::init(const assets::CharacterModel& character, const world::World& world, const assets::StaticMesh& rifle,
-    const assets::StaticMesh& pistol) {
+void Renderer::init(const assets::CharacterModel& character, const assets::CharacterModel* ybot, const world::World& world,
+    const assets::StaticMesh& rifle, const assets::StaticMesh& pistol) {
     impl_ = new Impl{};
     impl_->character = &character;
+    impl_->ybot = ybot;
     impl_->hand_joint = character.jointIndex("RightHand");
+    if (ybot != nullptr) {
+        impl_->ybot_hand_joint = ybot->jointIndex("RightHand");
+    }
 
     const uint8_t white_px[4] = {255, 255, 255, 255};
     if (!rifle.vertices.empty()) {
@@ -412,6 +421,14 @@ void Renderer::init(const assets::CharacterModel& character, const world::World&
     impl_->warrior_texture = mesh.base_color_rgba.empty()
         ? impl_->white_texture
         : uploadTexture(mesh.base_color_rgba.data(), mesh.texture_width, mesh.texture_height);
+
+    if (ybot != nullptr) {
+        const assets::CharacterMesh& y_mesh = ybot->mesh();
+        impl_->ybot_mesh = uploadMesh(y_mesh.vertices.data(), y_mesh.vertices.size(), y_mesh.indices.data(), y_mesh.indices.size());
+        impl_->ybot_texture = y_mesh.base_color_rgba.empty()
+            ? impl_->white_texture
+            : uploadTexture(y_mesh.base_color_rgba.data(), y_mesh.texture_width, y_mesh.texture_height);
+    }
 
     impl_->toon_program = buildMeshProgram(toonVertexShaderSource(), toonFragmentShaderSource(), "toon");
     if (impl_->toon_program != 0) {
@@ -462,6 +479,7 @@ void Renderer::init(const assets::CharacterModel& character, const world::World&
 }
 
 void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, int framebuffer_height, float frame_seconds) {
+    impl_->anim_time += frame_seconds;
     StyleSettings& style_settings = impl_->style;
     if (style_settings.advance_time) {
         style_settings.time_of_day = std::fmod(style_settings.time_of_day + frame_seconds / 60.0f, 24.0f);
@@ -571,11 +589,17 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     glBindVertexArray(impl_->ground.vao);
     glDrawElements(GL_TRIANGLES, impl_->ground.index_count, GL_UNSIGNED_SHORT, nullptr);
 
-    // Warrior: place the root on the terrain and turn it so its measured front
+    const bool use_ybot = (impl_->style.character_model == 1) && (impl_->ybot != nullptr);
+    const assets::CharacterModel* active_char = use_ybot ? impl_->ybot : impl_->character;
+    const GpuMesh& active_mesh = use_ybot ? impl_->ybot_mesh : impl_->warrior;
+    const GLuint active_texture = use_ybot ? impl_->ybot_texture : impl_->warrior_texture;
+    const int active_hand_joint = use_ybot ? impl_->ybot_hand_joint : impl_->hand_joint;
+
+    // Character: place the root on the terrain and turn it so its measured front
     // faces the heading. The pose is solved in world space (with foot IK), so
     // the model matrix is the identity.
     const Mat4 root = math::multiply(impl_->world->groundFrame(px, pz),
-        math::rotationY(gameplay.playerYaw() - impl_->character->frontYaw()));
+        math::rotationY(gameplay.playerYaw() - active_char->frontYaw()));
     // A fist attack plays its punch over the locomotion, if the asset has the clip.
     const char* clip_name = gameplay.clipName();
     float clip_time = gameplay.clipTime();
@@ -595,16 +619,16 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
         if (std::strcmp(clip_name, "Idle") == 0) held = rifle ? (aiming ? "RifleAim" : "RifleIdleAim") : "PistolIdle";
         else if (std::strcmp(clip_name, "Walk") == 0) held = rifle ? "RifleWalk" : "PistolWalk";
         else if (std::strcmp(clip_name, "Run") == 0) held = rifle ? "RifleRun" : "PistolRun";
-        if (held != nullptr && impl_->character->hasClip(held)) {
+        if (held != nullptr && active_char->hasClip(held)) {
             clip_name = held;
         }
     }
-    if (gameplay.weapon().attacking() && impl_->character->hasClip("PunchCombo")) {
+    if (gameplay.weapon().attacking() && active_char->hasClip("PunchCombo")) {
         clip_name = "PunchCombo";
-        clip_time = gameplay.weapon().attackProgress() * impl_->character->clipDuration("PunchCombo");
+        clip_time = gameplay.weapon().attackProgress() * active_char->clipDuration("PunchCombo");
     }
     impl_->played_clip = clip_name;
-    impl_->clip_duration = impl_->character->clipDuration(clip_name);
+    impl_->clip_duration = active_char->clipDuration(clip_name);
     impl_->clip_time = impl_->clip_duration > 0.0f ? std::fmod(clip_time, impl_->clip_duration) : 0.0f;
 
     // The pose: the locomotion clip below the spine, with the rifle's fire clip as an
@@ -614,9 +638,9 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     assets::CharacterModel::PoseRequest request;
     request.clip = clip_name;
     request.time = clip_time;
-    if (rifle_ready && weapon.firing() && impl_->character->hasClip("RifleFire")) {
+    if (rifle_ready && weapon.firing() && active_char->hasClip("RifleFire")) {
         request.upper_clip = "RifleFire";
-        request.upper_time = weapon.fireProgress() * impl_->character->clipDuration("RifleFire");
+        request.upper_time = weapon.fireProgress() * active_char->clipDuration("RifleFire");
     }
     // The aim weight: 1 while firing, and the aim amount while aimed down the scope.
     const float aim_weight = rifle_ready ? (weapon.firing() ? 1.0f : weapon.aim()) : 0.0f;
@@ -624,15 +648,15 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     request.spine_bend = aim_weight * lean;
     // Pose the character from its animation clips. The rifle follows the posed
     // hand while carried and the sight line while aimed; neither arm is solved to it.
-    impl_->character->evaluatePose(request, root, impl_->ground_height, impl_->joint_matrices);
-    const bool rifle_held = impl_->hand_joint >= 0 && rifle_ready &&
+    active_char->evaluatePose(request, root, impl_->ground_height, impl_->joint_matrices);
+    const bool rifle_held = active_hand_joint >= 0 && rifle_ready &&
         impl_->rifle_mesh.index_count > 0;
     impl_->muzzle_valid = false;
     impl_->rifle_points_valid = false;
     Mat4 rifle_model = math::identity();
     if (rifle_held) {
-        const Mat4 hand = math::multiply(impl_->joint_matrices[impl_->hand_joint],
-            impl_->character->jointBindWorld(impl_->hand_joint));
+        const Mat4 hand = math::multiply(impl_->joint_matrices[active_hand_joint],
+            active_char->jointBindWorld(active_hand_joint));
         float grip_world[3] = {hand.m[12], hand.m[13] - 0.3f * (1.0f - weapon.raise()), hand.m[14]};
         if (weapon.aim() > 0.5f) gameplay.sightGrip(grip_world);
 
@@ -685,20 +709,46 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     glUniformMatrix4fv(impl_->toon_mvp, 1, GL_FALSE, view_projection.m);
     glUniformMatrix4fv(impl_->toon_model, 1, GL_FALSE, model.m);
     setToonSurface(false);
-    glBindTexture(GL_TEXTURE_2D, impl_->warrior_texture);
-    glBindVertexArray(impl_->warrior.vao);
-    if (!gameplay.driving()) {  // in a car the warrior is out of sight
-        glDrawElements(GL_TRIANGLES, impl_->warrior.index_count, GL_UNSIGNED_SHORT, nullptr);
+    glBindTexture(GL_TEXTURE_2D, active_texture);
+    glBindVertexArray(active_mesh.vao);
+    if (!gameplay.driving()) {  // in a car the character is out of sight
+        glDrawElements(GL_TRIANGLES, active_mesh.index_count, GL_UNSIGNED_SHORT, nullptr);
+    }
+
+    // Companion character in the scene: the other character stands near the practice range.
+    if (impl_->style.show_companion) {
+        const assets::CharacterModel* comp_char = use_ybot ? impl_->character : impl_->ybot;
+        const GpuMesh& comp_mesh = use_ybot ? impl_->warrior : impl_->ybot_mesh;
+        const GLuint comp_texture = use_ybot ? impl_->warrior_texture : impl_->ybot_texture;
+        if (comp_char != nullptr && comp_mesh.index_count > 0) {
+            const float comp_x = 2.0f;
+            const float comp_z = 3.5f;
+            const Mat4 comp_root = math::multiply(impl_->world->groundFrame(comp_x, comp_z),
+                math::rotationY(3.14159f - comp_char->frontYaw()));
+            Mat4 comp_joints[kJoints]{};
+            assets::CharacterModel::PoseRequest comp_req;
+            comp_req.clip = "Idle";
+            comp_req.time = impl_->anim_time;
+            comp_char->evaluatePose(comp_req, comp_root, impl_->ground_height, comp_joints);
+
+            glUniformMatrix4fv(impl_->toon_joints, kJoints, GL_FALSE, comp_joints[0].m);
+            glUniformMatrix4fv(impl_->toon_mvp, 1, GL_FALSE, view_projection.m);
+            glUniformMatrix4fv(impl_->toon_model, 1, GL_FALSE, model.m);
+            setToonSurface(false);
+            glBindTexture(GL_TEXTURE_2D, comp_texture);
+            glBindVertexArray(comp_mesh.vao);
+            glDrawElements(GL_TRIANGLES, comp_mesh.index_count, GL_UNSIGNED_SHORT, nullptr);
+        }
     }
 
     // The pistol follows the posed right hand; the rifle uses the placement above.
     // Fists show no prop; a switch lowers the old prop and raises the new one.
-    if (impl_->hand_joint >= 0 && weapon.active() != gameplay::WeaponSlot::Fists && !gameplay.driving()) {
+    if (active_hand_joint >= 0 && weapon.active() != gameplay::WeaponSlot::Fists && !gameplay.driving()) {
         const bool rifle = weapon.active() == gameplay::WeaponSlot::Rifle;
         const GpuMesh& prop = rifle ? impl_->rifle_mesh : impl_->pistol_mesh;
         if (prop.index_count > 0) {
-            const Mat4 hand = math::multiply(impl_->joint_matrices[impl_->hand_joint],
-                impl_->character->jointBindWorld(impl_->hand_joint));
+            const Mat4 hand = math::multiply(impl_->joint_matrices[active_hand_joint],
+                active_char->jointBindWorld(active_hand_joint));
             // The rifle is placed at the grip (see above). The pistol keeps the carry
             // pose: at the hand, following the warrior's facing.
             Mat4 prop_model = rifle_model;
@@ -768,17 +818,17 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
 
     if (impl_->style.show_skeleton && impl_->skeleton_program != 0) {
         // Joint world positions: skin matrix times bind pose (the inverse of the bind's inverse).
-        const int joint_count = impl_->character->jointCount();
+        const int joint_count = active_char->jointCount();
         std::vector<float> bones;
         std::vector<float> points;
         std::vector<Mat4> world(joint_count);
         for (int j = 0; j < joint_count; ++j) {
-            world[j] = math::multiply(impl_->joint_matrices[j], impl_->character->jointBindWorld(j));
+            world[j] = math::multiply(impl_->joint_matrices[j], active_char->jointBindWorld(j));
         }
         for (int j = 0; j < joint_count; ++j) {
             const Mat4& w = world[j];
             points.insert(points.end(), {w.m[12], w.m[13], w.m[14]});
-            const int parent = impl_->character->jointParent(j);
+            const int parent = active_char->jointParent(j);
             if (parent >= 0) {
                 const Mat4& pw = world[parent];
                 bones.insert(bones.end(), {pw.m[12], pw.m[13], pw.m[14], w.m[12], w.m[13], w.m[14]});
@@ -868,14 +918,14 @@ void Renderer::cleanup() {
 
     impl_->city.cleanup();
     impl_->post.cleanup();
-    for (GpuMesh* mesh : {&impl_->rifle_mesh, &impl_->pistol_mesh, &impl_->cube_mesh}) {
+    for (GpuMesh* mesh : {&impl_->rifle_mesh, &impl_->pistol_mesh, &impl_->cube_mesh, &impl_->warrior, &impl_->ybot_mesh, &impl_->ground}) {
         if (mesh->vao != 0) {
             glDeleteVertexArrays(1, &mesh->vao);
             glDeleteBuffers(1, &mesh->vbo);
             glDeleteBuffers(1, &mesh->ibo);
         }
     }
-    for (GLuint texture : {impl_->rifle_texture, impl_->pistol_texture}) {
+    for (GLuint texture : {impl_->rifle_texture, impl_->pistol_texture, impl_->warrior_texture, impl_->ybot_texture, impl_->white_texture}) {
         if (texture != 0) {
             glDeleteTextures(1, &texture);
         }

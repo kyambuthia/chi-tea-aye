@@ -285,6 +285,9 @@ void DebugUi::draw(const gameplay::GameState& gameplay, const app::InputState& i
     }
     ImGui::Checkbox("Show skeleton (F1)", &style.show_skeleton);
     ImGui::Checkbox("Auto-recenter camera", &auto_recenter_);
+    const char* char_names[] = {"African Warrior", "Y-Bot"};
+    ImGui::Combo("Character (F4)", &style.character_model, char_names, 2);
+    ImGui::Checkbox("Show companion in scene", &style.show_companion);
 
     ImGui::Separator();
 

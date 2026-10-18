@@ -13,6 +13,7 @@ public:
     void cleanup();
 
     const CharacterModel& character() const;
+    const CharacterModel* ybot() const;
 
     // Weapon props. A missing file leaves the prop empty and the game runs without it.
     const StaticMesh& rifle() const;
@@ -20,6 +21,8 @@ public:
 
 private:
     CharacterModel character_;
+    CharacterModel ybot_;
+    bool has_ybot_ = false;
     StaticModel rifle_;
     StaticModel pistol_;
 };

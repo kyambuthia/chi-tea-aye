@@ -28,6 +28,9 @@ struct StyleSettings {
     bool dynamic_resolution = true;
     float fixed_scale = 1.0f;
     int msaa_samples = 4;
+    // Character selection: 0 = African Warrior, 1 = Y-Bot (F4).
+    int character_model = 1;
+    bool show_companion = true;
     float toon_bands = 4.0f;
     bool halftone_enabled = true;
     float halftone_intensity = 0.12f;
@@ -36,9 +39,9 @@ struct StyleSettings {
 
 class Renderer {
 public:
-    // Requires a current GL context. The character, world, and props must outlive the renderer.
-    void init(const assets::CharacterModel& character, const world::World& world, const assets::StaticMesh& rifle,
-        const assets::StaticMesh& pistol);
+    // Requires a current GL context. The characters, world, and props must outlive the renderer.
+    void init(const assets::CharacterModel& character, const assets::CharacterModel* ybot, const world::World& world,
+        const assets::StaticMesh& rifle, const assets::StaticMesh& pistol);
     // frame_seconds drives dynamic resolution and the clock.
     void draw(const gameplay::GameState& gameplay, int framebuffer_width, int framebuffer_height, float frame_seconds);
     StyleSettings& styleSettings();

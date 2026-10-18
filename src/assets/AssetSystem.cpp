@@ -6,6 +6,7 @@ namespace assets {
 namespace {
 
 constexpr const char* kWarriorPath = "assets/characters/african_warrior.glb";
+constexpr const char* kYBotPath = "assets/characters/y_bot.glb";
 constexpr const char* kRiflePath = "assets/models/rifle.glb";
 constexpr const char* kPistolPath = "assets/models/pistol.glb";
 
@@ -47,15 +48,32 @@ bool AssetSystem::init() {
     if (!ok) {
         SDL_Log("failed to parse %s", kWarriorPath);
     }
+
+    size_t ybot_size = 0;
+    void* ybot_bytes = SDL_LoadFile(kYBotPath, &ybot_size);
+    if (ybot_bytes != nullptr) {
+        has_ybot_ = ybot_.load(ybot_bytes, ybot_size);
+        SDL_free(ybot_bytes);
+        if (!has_ybot_) {
+            SDL_Log("failed to parse %s", kYBotPath);
+        }
+    }
     return ok;
 }
 
 void AssetSystem::cleanup() {
     character_.cleanup();
+    if (has_ybot_) {
+        ybot_.cleanup();
+    }
 }
 
 const CharacterModel& AssetSystem::character() const {
     return character_;
+}
+
+const CharacterModel* AssetSystem::ybot() const {
+    return has_ybot_ ? &ybot_ : nullptr;
 }
 
 const StaticMesh& AssetSystem::rifle() const {
