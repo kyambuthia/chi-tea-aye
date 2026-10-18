@@ -43,7 +43,24 @@
     X(void, glUniform1f, (GLint location, GLfloat v0)) \
     X(void, glUniform3f, (GLint location, GLfloat v0, GLfloat v1, GLfloat v2)) \
     X(void, glDeleteVertexArrays, (GLsizei n, const GLuint* arrays)) \
-    X(void, glDeleteBuffers, (GLsizei n, const GLuint* buffers))
+    X(void, glDeleteBuffers, (GLsizei n, const GLuint* buffers)) \
+    X(void, glBufferSubData, (GLenum target, GLintptr offset, GLsizeiptr size, const void* data)) \
+    X(void, glVertexAttribDivisor, (GLuint index, GLuint divisor)) \
+    X(void, glDrawElementsInstanced, (GLenum mode, GLsizei count, GLenum type, const void* indices, GLsizei instancecount)) \
+    X(void, glUniform2f, (GLint location, GLfloat v0, GLfloat v1)) \
+    X(void, glUniform3fv, (GLint location, GLsizei count, const GLfloat* value)) \
+    X(void, glUniform4f, (GLint location, GLfloat v0, GLfloat v1, GLfloat v2, GLfloat v3)) \
+    X(void, glGenFramebuffers, (GLsizei n, GLuint* framebuffers)) \
+    X(void, glBindFramebuffer, (GLenum target, GLuint framebuffer)) \
+    X(void, glDeleteFramebuffers, (GLsizei n, const GLuint* framebuffers)) \
+    X(void, glFramebufferTexture2D, (GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level)) \
+    X(void, glFramebufferRenderbuffer, (GLenum target, GLenum attachment, GLenum renderbuffertarget, GLuint renderbuffer)) \
+    X(GLenum, glCheckFramebufferStatus, (GLenum target)) \
+    X(void, glGenRenderbuffers, (GLsizei n, GLuint* renderbuffers)) \
+    X(void, glBindRenderbuffer, (GLenum target, GLuint renderbuffer)) \
+    X(void, glDeleteRenderbuffers, (GLsizei n, const GLuint* renderbuffers)) \
+    X(void, glRenderbufferStorageMultisample, (GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height)) \
+    X(void, glBlitFramebuffer, (GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1, GLbitfield mask, GLenum filter))
 
 #define CHI_GL_DECLARE(ret, name, args) extern ret(APIENTRY* chi_##name) args;
 CHI_GL_FUNCTIONS(CHI_GL_DECLARE)

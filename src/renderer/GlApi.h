@@ -38,4 +38,21 @@
 #define glUniform3f chi_glUniform3f
 #define glDeleteVertexArrays chi_glDeleteVertexArrays
 #define glDeleteBuffers chi_glDeleteBuffers
+#define glBufferSubData chi_glBufferSubData
+#define glVertexAttribDivisor chi_glVertexAttribDivisor
+#define glDrawElementsInstanced chi_glDrawElementsInstanced
+#define glUniform2f chi_glUniform2f
+#define glUniform3fv chi_glUniform3fv
+#define glUniform4f chi_glUniform4f
+#define glGenFramebuffers chi_glGenFramebuffers
+#define glBindFramebuffer chi_glBindFramebuffer
+#define glDeleteFramebuffers chi_glDeleteFramebuffers
+#define glFramebufferTexture2D chi_glFramebufferTexture2D
+#define glFramebufferRenderbuffer chi_glFramebufferRenderbuffer
+#define glCheckFramebufferStatus chi_glCheckFramebufferStatus
+#define glGenRenderbuffers chi_glGenRenderbuffers
+#define glBindRenderbuffer chi_glBindRenderbuffer
+#define glDeleteRenderbuffers chi_glDeleteRenderbuffers
+#define glRenderbufferStorageMultisample chi_glRenderbufferStorageMultisample
+#define glBlitFramebuffer chi_glBlitFramebuffer
 #endif

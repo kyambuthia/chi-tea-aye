@@ -1,11 +1,13 @@
 #include "gameplay/GameState.h"
 
 #include "app/InputState.h"
+#include "math/Geometry.h"
 #include "physics/Physics.h"
 #include "world/World.h"
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace gameplay {
 namespace {
@@ -51,7 +53,7 @@ constexpr float kTurnRate = 10.0f;             // radians per second
 constexpr float kAcceleration = 25.0f;         // meters per second squared
 constexpr float kDeceleration = 25.0f;
 constexpr float kStopSpeed = 0.05f;
-constexpr float kEdgeMargin = 0.5f;            // the warrior stops this far inside the world edge
+constexpr float kEdgeMargin = 0.5f;            // the warrior stops this far inside the city edge
 
 // A key press counts for at least one frame, so a tap inside one frame still moves.
 constexpr float kMinTapHold = 1.0f / 60.0f;
@@ -74,6 +76,30 @@ constexpr float kMaxDistance = 6.0f;
 // The inspection camera (F3) zooms closer, to check the hands on the model.
 constexpr float kInspectDistance = 1.0f;
 constexpr float kInspectMinDistance = 0.8f;
+
+// Driving camera: a chase camera behind the car that always comes back behind it.
+constexpr float kCarMinDistance = 4.0f;
+constexpr float kCarMaxDistance = 11.0f;
+constexpr float kCarRecenterDelay = 0.8f;      // seconds after the last mouse or stick look
+constexpr float kCarRecenterSpeed = 2.6f;      // radians per second at speed
+constexpr float kCarCameraTargetTime = 0.06f;  // a stiffer follow than on foot: cars are fast
+constexpr float kCarLookAbove = 1.0f;          // metres above the car's centre of mass
+constexpr float kCarFovBase = 4.0f * kPi / 180.0f;
+constexpr float kCarFovAtSpeed = 12.0f * kPi / 180.0f;
+constexpr float kCarFovFullSpeed = 40.0f;      // m/s
+
+// Collisions between cars, and how hard a crash must be to shake the camera.
+constexpr float kCarRestitution = 0.25f;
+constexpr float kCrashImpulse = 1800.0f;       // N s
+constexpr float kCrashImpulseFull = 16000.0f;  // N s for the strongest shake
+constexpr float kBulletImpulse = 40.0f;        // N s pushed into a car a bullet hits
+
+// Camera shake from trauma (Eiserloh, "Juicing Your Cameras With Math", GDC 2016).
+constexpr float kShotTrauma = 0.07f;
+constexpr float kTraumaDecay = 1.3f;           // per second
+constexpr float kShakeMaxAngle = 0.035f;       // radians
+constexpr float kShakeMaxOffset = 0.06f;       // metres
+constexpr float kShakeFrequency = 22.0f;
 
 // Signed angle from one heading to another, in (-pi, pi].
 float angleBetween(float from, float to) {
@@ -121,6 +147,7 @@ float approach(float current, float target, float factor) {
 void GameState::init() {}
 
 void GameState::update(const app::InputState& input, physics::Physics& physics, const world::World& world, float delta_time) {
+    world_ = &world;
     // Orbit input moves the camera's goal directly. The camera does not follow
     // the warrior's heading while it moves, or the view would chase the turn
     // and spin: the input is read against the view, which turns the warrior.
@@ -132,15 +159,17 @@ void GameState::update(const app::InputState& input, physics::Physics& physics, 
     } else {
         idle_orbit_time_ += delta_time;
     }
-    if (input.inspect_pressed) {
+    if (input.inspect_pressed && !driving()) {
         inspecting_ = !inspecting_;
         distance_target_ = inspecting_ ? kInspectDistance : kMinDistance;
     }
-    const float min_distance = inspecting_ ? kInspectMinDistance : kMinDistance;
-    distance_target_ = std::fmin(kMaxDistance, std::fmax(min_distance, distance_target_ - input.zoom_steps * 0.3f));
+    if (driving()) {
+        car_distance_target_ = std::fmin(kCarMaxDistance, std::fmax(kCarMinDistance, car_distance_target_ - input.zoom_steps * 0.6f));
+    } else {
+        const float min_distance = inspecting_ ? kInspectMinDistance : kMinDistance;
+        distance_target_ = std::fmin(kMaxDistance, std::fmax(min_distance, distance_target_ - input.zoom_steps * 0.3f));
+    }
 
-    // Recenter slowly behind the warrior, only once the player has stopped
-    // orbiting and stopped moving. Never while a movement key is held.
     // Movement reads the held keys plus any key pressed since the last frame.
     // Each tap stays active for at least one frame.
     app::InputState moves = input;
@@ -156,11 +185,34 @@ void GameState::update(const app::InputState& input, physics::Physics& physics, 
         }
     }
 
-    const bool has_movement_key = moves.keys.w || moves.keys.a || moves.keys.s || moves.keys.d;
-    if (auto_recenter_ && !has_movement_key && idle_orbit_time_ > kRecenterDelay) {
-        const float behind = yaw_ + kPi;
+    // Use: get in or out of a car; on foot with no car in reach it is the punch key.
+    if (input.use_pressed) {
+        if (driving() || vehicleInReach() >= 0) {
+            enterOrExit(world);
+        } else {
+            weapon_.attack();
+        }
+    }
+
+    // Recenter. On foot: slowly behind the warrior, only once the player has stopped
+    // orbiting and stopped moving, and only when enabled. Driving: always, after a short
+    // pause, and faster at speed, as a chase camera.
+    const bool has_movement_key = moves.keys.w || moves.keys.a || moves.keys.s || moves.keys.d ||
+        moves.move_x != 0.0f || moves.move_y != 0.0f;
+    float recenter_rate = 0.0f;
+    float behind = yaw_ + kPi;
+    if (driving()) {
+        const physics::Vehicle& car = vehicles_[driven_];
+        behind = car.yaw() + kPi;
+        if (idle_orbit_time_ > kCarRecenterDelay) {
+            recenter_rate = kCarRecenterSpeed * (0.35f + std::fmin(1.0f, std::fabs(car.forwardSpeed()) / 12.0f));
+        }
+    } else if (auto_recenter_ && !has_movement_key && idle_orbit_time_ > kRecenterDelay) {
+        recenter_rate = kRecenterSpeed;
+    }
+    if (recenter_rate > 0.0f) {
         const float offset = angleBetween(camera_goal_azimuth_, behind);
-        const float step = kRecenterSpeed * delta_time;
+        const float step = recenter_rate * delta_time;
         camera_goal_azimuth_ += std::fabs(offset) < step ? offset : (offset > 0.0f ? step : -step);
     }
 
@@ -172,9 +224,75 @@ void GameState::update(const app::InputState& input, physics::Physics& physics, 
     if (input.weapon_request >= 0) {
         weapon_.request(static_cast<WeaponSlot>(input.weapon_request));
     }
-    if (input.attack_pressed) {
+    if (input.attack_pressed && !driving()) {
         weapon_.attack();
     }
+
+    if (driving()) {
+        weapon_.setAiming(false);
+        fire_buffer_ = 0.0f;
+        crouched_ = false;
+        velocity_x_ = 0.0f;
+        velocity_z_ = 0.0f;
+        clip_ = Clip::Idle;
+        clip_time_ += delta_time;
+    } else {
+        updateOnFoot(input, physics, world, delta_time, moves);
+    }
+    last_shot_.age += delta_time;
+    recoil_kick_ = approach(recoil_kick_, 0.0f, smoothingFactor(kRecoilSettle, delta_time));
+    targets_.update(delta_time);
+    weapon_.update(delta_time);
+
+    updateVehicles(input, world, delta_time);
+
+    // The camera's target: the warrior, leading along his velocity; or the car as drawn.
+    float follow_x = player_x_;
+    float follow_z = player_z_;
+    float look_x = velocity_x_ * kLookAheadTime;
+    float look_z = velocity_z_ * kLookAheadTime;
+    float target_time = kCameraTargetTime;
+    float look_goal = crouched_ ? kCrouchLookHeight : kStandLookHeight;
+    if (driving()) {
+        const physics::Vehicle& car = vehicles_[driven_];
+        const math::Vec3 p = car.renderPosition();
+        player_x_ = car.position().x;
+        player_z_ = car.position().z;
+        yaw_ = car.yaw();
+        follow_x = p.x;
+        follow_z = p.z;
+        look_x = 0.0f;
+        look_z = 0.0f;
+        target_time = kCarCameraTargetTime;
+        look_goal = p.y + kCarLookAbove;
+    }
+    look_height_ = approach(look_height_, look_goal, smoothingFactor(8.0f, delta_time));
+    const float look_length = std::sqrt(look_x * look_x + look_z * look_z);
+    if (look_length > kLookAheadMax) {
+        look_x *= kLookAheadMax / look_length;
+        look_z *= kLookAheadMax / look_length;
+    }
+    camera_target_x_ = smoothDamp(camera_target_x_, follow_x + look_x, camera_target_x_speed_, target_time, delta_time);
+    camera_target_z_ = smoothDamp(camera_target_z_, follow_z + look_z, camera_target_z_speed_, target_time, delta_time);
+
+    const float zoom_factor = smoothingFactor(8.0f, delta_time);
+    camera_pitch_ = approach(camera_pitch_, pitch_target_, zoom_factor);
+    camera_distance_ = approach(camera_distance_, driving() ? car_distance_target_ : distance_target_, zoom_factor);
+
+    // At speed the view widens a little, which sells the speed.
+    float fov_goal = 0.0f;
+    if (driving()) {
+        const float speed = std::fabs(vehicles_[driven_].forwardSpeed());
+        fov_goal = kCarFovBase + kCarFovAtSpeed * std::fmin(1.0f, speed / kCarFovFullSpeed);
+    }
+    fov_boost_ = approach(fov_boost_, fov_goal, smoothingFactor(3.0f, delta_time));
+
+    trauma_ = std::fmax(0.0f, trauma_ - kTraumaDecay * delta_time);
+    shake_time_ += delta_time;
+}
+
+void GameState::updateOnFoot(const app::InputState& input, physics::Physics& physics, const world::World& world, float delta_time,
+    const app::InputState& moves) {
     // Fire while the button is held, and take a press that came just before the
     // next shot was allowed.
     if (input.fire_pressed) {
@@ -184,7 +302,8 @@ void GameState::update(const app::InputState& input, physics::Physics& physics, 
     if ((input.fire_held || fire_buffer_ > 0.0f) && weapon_.fire()) {
         fire_buffer_ = 0.0f;
         const Ray ray = cameraRay();
-        const float reach = std::min(Targets::kRange, nearestWallDistance(ray));
+        int hit_vehicle = -1;
+        const float reach = std::min(Targets::kRange, nearestWallDistance(ray, -1, &hit_vehicle));
         float impact = reach;
         const bool hit = targets_.shoot(ray, reach, &impact);
         last_shot_.age = 0.0f;
@@ -192,19 +311,20 @@ void GameState::update(const app::InputState& input, physics::Physics& physics, 
         for (int c = 0; c < 3; ++c) {
             last_shot_.impact[c] = ray.origin[c] + ray.direction[c] * impact;
         }
+        if (!hit && hit_vehicle >= 0) {
+            // A bullet nudges the car it hits.
+            const math::Vec3 at{last_shot_.impact[0], last_shot_.impact[1], last_shot_.impact[2]};
+            const math::Vec3 dir{ray.direction[0], ray.direction[1], ray.direction[2]};
+            vehicles_[hit_vehicle].applyImpulse(dir * kBulletImpulse, at);
+        }
         recoil_kick_ += kRecoilKick;
+        addTrauma(kShotTrauma);
     }
-    last_shot_.age += delta_time;
-    recoil_kick_ = approach(recoil_kick_, 0.0f, smoothingFactor(kRecoilSettle, delta_time));
-    targets_.update(delta_time);
     weapon_.setAiming(input.aim_held);
-    weapon_.update(delta_time);
 
     if (input.crouch_pressed) {
         crouched_ = !crouched_;
     }
-    const float look_goal = crouched_ ? kCrouchLookHeight : kStandLookHeight;
-    look_height_ = approach(look_height_, look_goal, smoothingFactor(8.0f, delta_time));
 
     float dir_x = 0.0f;
     float dir_z = 0.0f;
@@ -234,7 +354,7 @@ void GameState::update(const app::InputState& input, physics::Physics& physics, 
         const float input_heading = std::atan2(dir_x, dir_z);
         yaw_ = turnToward(yaw_, input_heading, kTurnRate * delta_time);
         const float align = std::fmax(0.0f, std::cos(angleBetween(yaw_, input_heading)));
-        const bool running = input.keys.shift;
+        const bool running = input.keys.shift || input.run_held;
         next = crouched_ ? Clip::CrouchWalk : (running ? Clip::Run : Clip::Walk);
         const float speed = (crouched_ ? kCrouchSpeed : (running ? kRunSpeed : kWalkSpeed)) * align;
         // Facing is +Z at zero yaw, so the forward direction is (sin, cos).
@@ -259,8 +379,8 @@ void GameState::update(const app::InputState& input, physics::Physics& physics, 
 
     physics.integratePlayer(velocity_x_, velocity_z_, 1.0f, delta_time, player_x_, player_z_);
 
-    // The world has edges: stop at them rather than walking into empty space.
-    const float edge = world::World::kHalfSize - kEdgeMargin;
+    // The city has edges: stop at them rather than walking into empty space.
+    const float edge = world::World::kCityHalfSize - kEdgeMargin;
     if (player_x_ > edge || player_x_ < -edge) {
         player_x_ = std::fmax(-edge, std::fmin(edge, player_x_));
         velocity_x_ = 0.0f;
@@ -270,32 +390,25 @@ void GameState::update(const app::InputState& input, physics::Physics& physics, 
         velocity_z_ = 0.0f;
     }
 
-    // Walls: push the warrior out of each one, and drop the velocity into it.
-    for (const world::Box& wall : world.walls()) {
-        const float nx = std::fmax(wall.min[0], std::fmin(wall.max[0], player_x_));
-        const float nz = std::fmax(wall.min[2], std::fmin(wall.max[2], player_z_));
-        float dx = player_x_ - nx;
-        float dz = player_z_ - nz;
-        const float d2 = dx * dx + dz * dz;
-        if (d2 >= kPlayerRadius * kPlayerRadius) {
+    // Walls and buildings near the warrior: push him out of each, and drop the
+    // velocity into it. The grid hands back only the boxes around him.
+    static thread_local std::vector<int> nearby;
+    nearby.clear();
+    world.boxesNear(player_x_ - kPlayerRadius, player_z_ - kPlayerRadius, player_x_ + kPlayerRadius, player_z_ + kPlayerRadius, nearby);
+    for (int index : nearby) {
+        const world::Box& wall = world.walls()[index];
+        float nx = 0.0f;
+        float nz = 0.0f;
+        float depth = 0.0f;
+        if (!math::circleBoxPush(player_x_, player_z_, kPlayerRadius, wall.min, wall.max, nx, nz, depth)) {
             continue;
         }
-        if (d2 < 1e-8f) {
-            // Inside the wall: move out through its near face, on the -Z side.
-            player_z_ = wall.min[2] - kPlayerRadius;
-            velocity_z_ = std::fmin(velocity_z_, 0.0f);
-            continue;
-        }
-        const float d = std::sqrt(d2);
-        dx /= d;
-        dz /= d;
-        const float push = kPlayerRadius - d;
-        player_x_ += dx * push;
-        player_z_ += dz * push;
-        const float into = velocity_x_ * dx + velocity_z_ * dz;
+        player_x_ += nx * depth;
+        player_z_ += nz * depth;
+        const float into = velocity_x_ * nx + velocity_z_ * nz;
         if (into < 0.0f) {
-            velocity_x_ -= into * dx;
-            velocity_z_ -= into * dz;
+            velocity_x_ -= into * nx;
+            velocity_z_ -= into * nz;
         }
     }
 
@@ -311,21 +424,251 @@ void GameState::update(const app::InputState& input, physics::Physics& physics, 
         clip_time_ = 0.0f;
     }
     clip_time_ += delta_time;
+}
 
-    // The camera's target leads the player along its velocity, and springs toward it.
-    float look_x = velocity_x_ * kLookAheadTime;
-    float look_z = velocity_z_ * kLookAheadTime;
-    const float look_length = std::sqrt(look_x * look_x + look_z * look_z);
-    if (look_length > kLookAheadMax) {
-        look_x *= kLookAheadMax / look_length;
-        look_z *= kLookAheadMax / look_length;
+void GameState::updateVehicles(const app::InputState& input, const world::World& world, float delta_time) {
+    for (int i = 0; i < static_cast<int>(vehicles_.size()); ++i) {
+        physics::VehicleInput controls;
+        controls.parked = i != driven_;
+        if (i == driven_) {
+            const float steer_keys = (input.keys.d ? 1.0f : 0.0f) - (input.keys.a ? 1.0f : 0.0f);
+            controls.throttle = std::fmax(input.keys.w ? 1.0f : 0.0f, input.throttle);
+            controls.brake = std::fmax(input.keys.s ? 1.0f : 0.0f, input.brake);
+            controls.steer = std::fmax(-1.0f, std::fmin(1.0f, steer_keys + input.move_x));
+            controls.handbrake = input.handbrake_held;
+        }
+        vehicles_[i].update(controls, world, delta_time);
+        if (i == driven_ && vehicles_[i].lastImpact() > kCrashImpulse) {
+            addTrauma(std::fmin(0.7f, vehicles_[i].lastImpact() / kCrashImpulseFull));
+        }
     }
-    camera_target_x_ = smoothDamp(camera_target_x_, player_x_ + look_x, camera_target_x_speed_, kCameraTargetTime, delta_time);
-    camera_target_z_ = smoothDamp(camera_target_z_, player_z_ + look_z, camera_target_z_speed_, kCameraTargetTime, delta_time);
 
-    const float zoom_factor = smoothingFactor(8.0f, delta_time);
-    camera_pitch_ = approach(camera_pitch_, pitch_target_, zoom_factor);
-    camera_distance_ = approach(camera_distance_, distance_target_, zoom_factor);
+    // Cars against each other.
+    for (size_t i = 0; i < vehicles_.size(); ++i) {
+        for (size_t j = i + 1; j < vehicles_.size(); ++j) {
+            physics::Vehicle& a = vehicles_[i];
+            physics::Vehicle& b = vehicles_[j];
+            if (a.asleep() && b.asleep()) {
+                continue;
+            }
+            const math::Vec3 d = b.position() - a.position();
+            if (d.x * d.x + d.z * d.z > 36.0f) {
+                continue;
+            }
+            collideVehiclePair(a, b);
+        }
+    }
+
+    for (int i = 0; i < static_cast<int>(vehicles_.size()); ++i) {
+        physics::Vehicle& car = vehicles_[i];
+        // A moving car knocks the practice targets over.
+        if (!car.asleep() && math::length(car.velocity()) > 1.0f) {
+            for (int c = 0; c < physics::Vehicle::kCircles; ++c) {
+                float x = 0.0f;
+                float z = 0.0f;
+                float r = 0.0f;
+                car.footprintCircle(c, x, z, r);
+                targets_.knockDownInCircle(x, z, r);
+            }
+        }
+        // The warrior on foot cannot walk through a car.
+        if (!driving()) {
+            float nx = 0.0f;
+            float nz = 0.0f;
+            float depth = 0.0f;
+            if (car.circleOverlap(player_x_, player_z_, kPlayerRadius, nx, nz, depth)) {
+                player_x_ += nx * depth;
+                player_z_ += nz * depth;
+                const float into = velocity_x_ * nx + velocity_z_ * nz;
+                if (into < 0.0f) {
+                    velocity_x_ -= into * nx;
+                    velocity_z_ -= into * nz;
+                }
+            }
+        }
+    }
+}
+
+void GameState::collideVehiclePair(physics::Vehicle& a, physics::Vehicle& b) {
+    for (int ia = 0; ia < physics::Vehicle::kCircles; ++ia) {
+        for (int ib = 0; ib < physics::Vehicle::kCircles; ++ib) {
+            float ax, az, ar, bx, bz, br;
+            a.footprintCircle(ia, ax, az, ar);
+            b.footprintCircle(ib, bx, bz, br);
+            const float dx = bx - ax;
+            const float dz = bz - az;
+            const float d2 = dx * dx + dz * dz;
+            const float reach = ar + br;
+            if (d2 >= reach * reach) {
+                continue;
+            }
+            const float d = std::sqrt(d2);
+            const math::Vec3 n = d > 1e-5f ? math::Vec3{dx / d, 0.0f, dz / d} : math::Vec3{1.0f, 0.0f, 0.0f};
+            const float depth = reach - d;
+            a.wake();
+            b.wake();
+            a.translate(n * (-0.5f * depth));
+            b.translate(n * (0.5f * depth));
+            const math::Vec3 contact{ax + n.x * ar, 0.5f * (a.position().y + b.position().y), az + n.z * ar};
+            const float vn = math::dot(b.velocityAt(contact) - a.velocityAt(contact), n);
+            if (vn >= 0.0f) {
+                continue;
+            }
+            const float k = a.inverseMassAlong(contact, n) + b.inverseMassAlong(contact, n);
+            const float j = -(1.0f + kCarRestitution) * vn / k;
+            a.applyImpulse(n * -j, contact);
+            b.applyImpulse(n * j, contact);
+            const physics::Vehicle* driven = driving() ? &vehicles_[driven_] : nullptr;
+            if ((driven == &a || driven == &b) && j > kCrashImpulse) {
+                addTrauma(std::fmin(0.7f, j / kCrashImpulseFull));
+            }
+        }
+    }
+}
+
+int GameState::vehicleInReach() const {
+    if (driving()) {
+        return -1;
+    }
+    // Reach is measured to the car's body, not its centre: a door is in reach from
+    // anywhere along the side of a 4.4 m car.
+    int best = -1;
+    float best_gap = kEnterReach;
+    for (int i = 0; i < static_cast<int>(vehicles_.size()); ++i) {
+        const physics::Vehicle& car = vehicles_[i];
+        float nx = 0.0f;
+        float nz = 0.0f;
+        float depth = 0.0f;
+        if (car.up().y > 0.5f && car.circleOverlap(player_x_, player_z_, kEnterReach, nx, nz, depth)) {
+            const float gap = kEnterReach - depth;  // metres from the body's footprint
+            if (gap < best_gap) {
+                best = i;
+                best_gap = gap;
+            }
+        }
+    }
+    return best;
+}
+
+void GameState::enterOrExit(const world::World& world) {
+    if (!driving()) {
+        const int car = vehicleInReach();
+        if (car < 0) {
+            return;
+        }
+        driven_ = car;
+        vehicles_[car].wake();
+        crouched_ = false;
+        inspecting_ = false;
+        weapon_.setAiming(false);
+        idle_orbit_time_ = 0.0f;
+        return;
+    }
+    const physics::Vehicle& car = vehicles_[driven_];
+    if (std::fabs(car.forwardSpeed()) > kExitMaxSpeed) {
+        return;
+    }
+    // Step out at the driver's door (the car's left, local +X), or the other side, or
+    // behind, or in front: the first spot clear of walls and other cars.
+    const float yaw = car.yaw();
+    const float left_x = std::cos(yaw);
+    const float left_z = -std::sin(yaw);
+    const float fwd_x = std::sin(yaw);
+    const float fwd_z = std::cos(yaw);
+    const float side = car.spec().half_extents.x + kPlayerRadius + 0.25f;
+    const float end = car.spec().half_extents.z + kPlayerRadius + 0.3f;
+    const float offsets[4][2] = {
+        {left_x * side, left_z * side}, {-left_x * side, -left_z * side}, {-fwd_x * end, -fwd_z * end}, {fwd_x * end, fwd_z * end}};
+    std::vector<int> nearby;
+    for (const auto& o : offsets) {
+        const float x = car.position().x + o[0];
+        const float z = car.position().z + o[1];
+        const float edge = world::World::kCityHalfSize - kEdgeMargin;
+        bool clear = std::fabs(x) < edge && std::fabs(z) < edge;
+        nearby.clear();
+        world.boxesNear(x - kPlayerRadius, z - kPlayerRadius, x + kPlayerRadius, z + kPlayerRadius, nearby);
+        for (int index : nearby) {
+            float nx, nz, depth;
+            if (math::circleBoxPush(x, z, kPlayerRadius, world.walls()[index].min, world.walls()[index].max, nx, nz, depth)) {
+                clear = false;
+            }
+        }
+        for (const physics::Vehicle& other : vehicles_) {
+            float nx, nz, depth;
+            if (&other != &car && other.circleOverlap(x, z, kPlayerRadius, nx, nz, depth)) {
+                clear = false;
+            }
+        }
+        if (clear) {
+            driven_ = -1;
+            setPlayerPosition(x, z, yaw);
+            return;
+        }
+    }
+}
+
+void GameState::addTrauma(float amount) {
+    trauma_ = std::fmin(1.0f, trauma_ + amount);
+}
+
+void GameState::setPlayerPosition(float x, float z, float yaw) {
+    player_x_ = x;
+    player_z_ = z;
+    yaw_ = yaw;
+    velocity_x_ = 0.0f;
+    velocity_z_ = 0.0f;
+    clip_ = Clip::Idle;
+    clip_time_ = 0.0f;
+}
+
+void GameState::spawnVehicles(const world::World& world) {
+    world_ = &world;
+    vehicles_.clear();
+    driven_ = -1;
+    for (const world::ParkingSpot& spot : world.city().parking()) {
+        physics::Vehicle car;
+        car.reset(world, spot.x, spot.z, spot.yaw);
+        vehicles_.push_back(car);
+    }
+}
+
+float GameState::cameraFov() const {
+    const float aim = weapon_.active() == WeaponSlot::Rifle && !driving() ? weapon_.aim() : 0.0f;
+    return (60.0f - 30.0f * aim) * kPi / 180.0f + fov_boost_;
+}
+
+void GameState::renderCameraView(float eye[3], float look[3]) const {
+    cameraView(eye, look);
+    const float shake = trauma_ * trauma_;
+    if (shake <= 1e-4f) {
+        return;
+    }
+    // Smooth noise, not random jitter: a few incommensurate sines per axis.
+    auto noise = [](float t) { return 0.55f * std::sin(t) + 0.3f * std::sin(2.31f * t + 1.7f) + 0.15f * std::sin(4.79f * t + 0.3f); };
+    const float t = shake_time_ * kShakeFrequency;
+    const float yaw_offset = kShakeMaxAngle * shake * noise(t);
+    const float pitch_offset = kShakeMaxAngle * shake * noise(t + 31.7f);
+    const float lift = kShakeMaxOffset * shake * noise(t + 77.1f);
+    float f[3] = {look[0] - eye[0], look[1] - eye[1], look[2] - eye[2]};
+    const float length = std::sqrt(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+    if (length < 1e-4f) {
+        return;
+    }
+    for (float& c : f) c /= length;
+    // right = f x up, up' = right x f
+    float r[3] = {-f[2], 0.0f, f[0]};
+    const float rl = std::sqrt(r[0] * r[0] + r[2] * r[2]);
+    if (rl < 1e-4f) {
+        return;
+    }
+    r[0] /= rl;
+    r[2] /= rl;
+    const float u[3] = {r[1] * f[2] - r[2] * f[1], r[2] * f[0] - r[0] * f[2], r[0] * f[1] - r[1] * f[0]};
+    for (int c = 0; c < 3; ++c) {
+        look[c] += (r[c] * yaw_offset + u[c] * pitch_offset) * length;
+        eye[c] += u[c] * lift;
+        look[c] += u[c] * lift;
+    }
 }
 
 void GameState::cleanup() {}
@@ -343,15 +686,24 @@ bool GameState::crouched() const {
     return crouched_;
 }
 
-float GameState::nearestWallDistance(const Ray& ray) const {
+float GameState::nearestWallDistance(const Ray& ray, int skip_vehicle, int* hit_vehicle) const {
     float nearest = 1e9f;
-    if (world_ == nullptr) {
-        return nearest;
+    if (hit_vehicle != nullptr) {
+        *hit_vehicle = -1;
     }
-    for (const world::Box& wall : world_->walls()) {
-        const float d = rayBoxDistance(ray, wall.min, wall.max);
+    if (world_ != nullptr) {
+        nearest = world_->raycast(ray.origin, ray.direction, nearest);
+    }
+    for (int i = 0; i < static_cast<int>(vehicles_.size()); ++i) {
+        if (i == skip_vehicle) {
+            continue;
+        }
+        const float d = vehicles_[i].rayDistance(ray.origin, ray.direction);
         if (d >= 0.0f && d < nearest) {
             nearest = d;
+            if (hit_vehicle != nullptr) {
+                *hit_vehicle = i;
+            }
         }
     }
     return nearest;
@@ -369,7 +721,7 @@ float GameState::clearCameraDistance(float wanted_distance) const {
     for (int c = 0; c < 3; ++c) {
         ray.direction[c] = dir[c];
     }
-    const float wall = nearestWallDistance(ray);
+    const float wall = nearestWallDistance(ray, driven_);
     if (wall >= wanted_distance) {
         return wanted_distance;
     }

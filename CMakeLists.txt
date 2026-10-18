@@ -36,15 +36,32 @@ endif()
     set(ozz_build_data OFF CACHE BOOL "" FORCE)
     add_subdirectory(external/ozz-animation)
 
-# Character and world logic, shared by the game and the tests.
+# The world: terrain, the city layout, and its spatial grid. No GL, no SDL.
+add_library(chi-world STATIC
+    src/world/World.cpp
+    src/world/City.cpp
+    src/world/SpatialGrid.cpp
+)
+target_include_directories(chi-world PUBLIC src)
+
+# Character models and props, shared by the game and the tests.
 add_library(chi-character STATIC
     src/assets/CharacterModel.cpp
-    src/world/World.cpp
-    src/gameplay/WeaponState.cpp
     src/assets/StaticModel.cpp
 )
 target_include_directories(chi-character PUBLIC src external/cgltf external/stb)
-target_link_libraries(chi-character PUBLIC ozz_animation_offline ozz_animation ozz_base)
+target_link_libraries(chi-character PUBLIC chi-world ozz_animation_offline ozz_animation ozz_base)
+
+# Simulation: gameplay state, weapons, targets, movement, and vehicles. Testable headless.
+add_library(chi-sim STATIC
+    src/gameplay/GameState.cpp
+    src/gameplay/Targets.cpp
+    src/gameplay/WeaponState.cpp
+    src/physics/Physics.cpp
+    src/physics/Vehicle.cpp
+)
+target_include_directories(chi-sim PUBLIC src)
+target_link_libraries(chi-sim PUBLIC chi-world)
 
 set(IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/imgui")
 add_library(imgui STATIC
@@ -60,6 +77,10 @@ target_include_directories(imgui PUBLIC ${IMGUI_DIR} ${IMGUI_DIR}/backends)
 target_link_libraries(imgui PUBLIC SDL3::SDL3)
 if(CHI_GLES)
     target_compile_definitions(imgui PUBLIC IMGUI_IMPL_OPENGL_ES3)
+    # Browsers stall on every GL state query; the backend's per-frame save and restore
+    # of GL state is answered without asking GL (see the header for why that is safe).
+    set_source_files_properties(${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp PROPERTIES
+        COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/src/debug/ImGuiGlShadow.h")
 endif()
 
 set(CHI_SOURCES
@@ -67,11 +88,12 @@ set(CHI_SOURCES
     src/app/App.cpp
     src/renderer/Renderer.cpp
     src/renderer/GlFunctions.cpp
-    src/gameplay/GameState.cpp
-    src/gameplay/Targets.cpp
     src/ui/WeaponWheel.cpp
-    src/physics/Physics.cpp
+    src/ui/Hud.cpp
     src/assets/AssetSystem.cpp
+    src/renderer/GlUtil.cpp
+    src/renderer/CityPass.cpp
+    src/renderer/PostPass.cpp
     src/debug/DebugUi.cpp
 )
 
@@ -93,12 +115,14 @@ target_compile_options(${CHI_APP_TARGET} PRIVATE
     $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic>
 )
 
-target_link_libraries(${CHI_APP_TARGET} PRIVATE chi-character imgui SDL3::SDL3)
+target_link_libraries(${CHI_APP_TARGET} PRIVATE chi-sim chi-character imgui SDL3::SDL3)
 
 if(EMSCRIPTEN)
     # Emscripten emits an HTML shell alongside the JS and WASM.
     set_target_properties(${CHI_APP_TARGET} PROPERTIES OUTPUT_NAME "index" SUFFIX ".html")
     target_link_options(${CHI_APP_TARGET} PRIVATE --shell-file ${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html)
+    # Relink when the page shell changes, not only when the code does.
+    set_property(TARGET ${CHI_APP_TARGET} APPEND PROPERTY LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html)
     # Bundle the assets into the virtual filesystem at the same relative paths the game loads.
     target_link_options(${CHI_APP_TARGET} PRIVATE --preload-file ${CMAKE_CURRENT_SOURCE_DIR}/assets@/assets)
 
@@ -145,19 +169,26 @@ if(CHI_BUILD_TESTS AND NOT EMSCRIPTEN)
     target_link_libraries(foot_contact_check PRIVATE chi-character)
     add_executable(weapon_attachment_check tests/weapon_attachment_check.cpp)
     target_include_directories(weapon_attachment_check PRIVATE src)
-    add_executable(weapon_state_check tests/weapon_state_check.cpp src/gameplay/WeaponState.cpp)
-    target_include_directories(weapon_state_check PRIVATE src)
+    add_executable(weapon_state_check tests/weapon_state_check.cpp)
+    target_link_libraries(weapon_state_check PRIVATE chi-sim)
     add_executable(hand_ik_check tests/hand_ik_check.cpp)
     target_link_libraries(hand_ik_check PRIVATE chi-character)
     add_executable(knee_check tests/knee_check.cpp)
     target_link_libraries(knee_check PRIVATE chi-character)
     add_executable(clip_direction_check tests/clip_direction_check.cpp)
     target_link_libraries(clip_direction_check PRIVATE chi-character)
-    add_executable(movement_check tests/movement_check.cpp src/gameplay/GameState.cpp src/gameplay/WeaponState.cpp
-        src/gameplay/Targets.cpp src/world/World.cpp src/physics/Physics.cpp)
-    target_include_directories(movement_check PRIVATE src)
-    add_executable(target_check tests/target_check.cpp src/gameplay/Targets.cpp src/world/World.cpp)
-    target_include_directories(target_check PRIVATE src)
+    add_executable(movement_check tests/movement_check.cpp)
+    target_link_libraries(movement_check PRIVATE chi-sim)
+    add_executable(target_check tests/target_check.cpp)
+    target_link_libraries(target_check PRIVATE chi-sim)
     add_executable(wheel_check tests/wheel_check.cpp src/ui/WeaponWheel.cpp)
     target_include_directories(wheel_check PRIVATE src)
+    add_executable(world_check tests/world_check.cpp)
+    target_link_libraries(world_check PRIVATE chi-world)
+    add_executable(vehicle_check tests/vehicle_check.cpp)
+    target_link_libraries(vehicle_check PRIVATE chi-sim)
+    add_executable(render_math_check tests/render_math_check.cpp)
+    target_include_directories(render_math_check PRIVATE src)
+    add_executable(hud_check tests/hud_check.cpp)
+    target_include_directories(hud_check PRIVATE src)
 endif()

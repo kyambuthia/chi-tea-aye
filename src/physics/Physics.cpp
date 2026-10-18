@@ -16,8 +16,9 @@ void Physics::inputDirection(const app::InputState& input, float camera_azimuth,
     const float right_x = -forward_z;
     const float right_z = forward_x;
 
-    const float input_x = (input.keys.d ? 1.0f : 0.0f) - (input.keys.a ? 1.0f : 0.0f);
-    const float input_z = (input.keys.w ? 1.0f : 0.0f) - (input.keys.s ? 1.0f : 0.0f);
+    // Keys and an analog stick add up; the result is capped at unit length below.
+    const float input_x = (input.keys.d ? 1.0f : 0.0f) - (input.keys.a ? 1.0f : 0.0f) + input.move_x;
+    const float input_z = (input.keys.w ? 1.0f : 0.0f) - (input.keys.s ? 1.0f : 0.0f) + input.move_y;
 
     dir_x = input_x * right_x + input_z * forward_x;
     dir_z = input_x * right_z + input_z * forward_z;

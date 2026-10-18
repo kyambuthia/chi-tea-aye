@@ -16,13 +16,18 @@ class World;
 namespace renderer {
 
 struct StyleSettings {
-    // Debug view: draws the warrior's joints and bones over the model.
-    bool show_skeleton = true;
+    // Debug view: draws the warrior's joints and bones over the model (F1).
+    bool show_skeleton = false;
     // Debug overlay: markers at the right hand, rifle grip, fore-end and muzzle (F2).
     bool show_rifle_points = false;
-    float light_x = -0.45f;
-    float light_y = 0.80f;
-    float light_z = 0.35f;
+    // Time of day in hours (0..24): sun, sky, fog colour, lit windows and street lamps.
+    float time_of_day = 17.0f;
+    bool advance_time = false;   // let the clock run (one game hour per real minute)
+    float fog_scale = 1.0f;
+    // Performance: dynamic resolution, a fixed scale when it is off, and MSAA samples.
+    bool dynamic_resolution = true;
+    float fixed_scale = 1.0f;
+    int msaa_samples = 4;
     float toon_bands = 4.0f;
     bool halftone_enabled = true;
     float halftone_intensity = 0.12f;
@@ -34,8 +39,21 @@ public:
     // Requires a current GL context. The character, world, and props must outlive the renderer.
     void init(const assets::CharacterModel& character, const world::World& world, const assets::StaticMesh& rifle,
         const assets::StaticMesh& pistol);
-    void draw(const gameplay::GameState& gameplay, int framebuffer_width, int framebuffer_height);
+    // frame_seconds drives dynamic resolution and the clock.
+    void draw(const gameplay::GameState& gameplay, int framebuffer_width, int framebuffer_height, float frame_seconds);
     StyleSettings& styleSettings();
+
+    // Numbers for the dev panel.
+    struct Stats {
+        float render_scale = 1.0f;
+        int scene_width = 0;
+        int scene_height = 0;
+        int samples = 0;
+        bool offscreen = false;
+        int visible_boxes = 0;
+        int total_boxes = 0;
+    };
+    const Stats& stats() const;
     // The clip the last frame played: its time within the clip (wrapped for loops) and its length.
     float clipTime() const;
     float clipDuration() const;

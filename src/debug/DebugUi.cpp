@@ -227,8 +227,9 @@ void drawCrosshair(ImVec2 centre) {
 
 } // namespace
 
-void DebugUi::draw(const gameplay::GameState& gameplay, const app::InputState& input, renderer::StyleSettings& style, uint64_t frame_count, float delta_time,
-    const char* played_clip, float clip_time, float clip_duration) {
+void DebugUi::draw(const gameplay::GameState& gameplay, const app::InputState& input, renderer::StyleSettings& style,
+    const renderer::Renderer::Stats& stats, uint64_t frame_count, float delta_time, const char* played_clip, float clip_time,
+    float clip_duration) {
     const float fps = delta_time > 0.0f ? 1.0f / delta_time : 0.0f;
 
     char frame_text[32]{};
@@ -245,7 +246,7 @@ void DebugUi::draw(const gameplay::GameState& gameplay, const app::InputState& i
     std::snprintf(player_text, sizeof(player_text), "%.2f, %.2f", gameplay.playerX(), gameplay.playerZ());
 
     ImGui::SetNextWindowPos(ImVec2(16.0f, 16.0f), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(310.0f, 420.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(320.0f, 560.0f), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver);
     ImGui::Begin("Dev Panel");
 
@@ -276,8 +277,41 @@ void DebugUi::draw(const gameplay::GameState& gameplay, const app::InputState& i
     char target_text[48]{};
     std::snprintf(target_text, sizeof(target_text), "%d hit / %d shots", gameplay.targets().hits(), gameplay.targets().shots());
     drawStatRow("Targets", target_text);
+    if (gameplay.driving()) {
+        const auto& car = gameplay.vehicles()[gameplay.drivenVehicle()];
+        char car_text[64]{};
+        std::snprintf(car_text, sizeof(car_text), "%.0f km/h, %d wheels down", std::fabs(car.forwardSpeed()) * 3.6f, car.groundedWheels());
+        drawStatRow("Car", car_text);
+    }
     ImGui::Checkbox("Show skeleton (F1)", &style.show_skeleton);
     ImGui::Checkbox("Auto-recenter camera", &auto_recenter_);
+
+    ImGui::Separator();
+
+    sectionHeader(PanelIcon::Sliders, "World");
+    ImGui::SliderFloat("Time of day", &style.time_of_day, 0.0f, 24.0f, "%.1f h");
+    ImGui::Checkbox("Clock runs", &style.advance_time);
+    ImGui::SliderFloat("Fog", &style.fog_scale, 0.0f, 3.0f, "%.2fx");
+
+    ImGui::Separator();
+
+    sectionHeader(PanelIcon::Activity, "Performance");
+    char scale_text[64]{};
+    std::snprintf(scale_text, sizeof(scale_text), "%.0f%%  (%d x %d, %dx MSAA)", stats.render_scale * 100.0f, stats.scene_width,
+        stats.scene_height, stats.samples);
+    drawStatRow("3D resolution", stats.offscreen ? scale_text : "window (no offscreen target)");
+    char boxes_text[48]{};
+    std::snprintf(boxes_text, sizeof(boxes_text), "%d of %d", stats.visible_boxes, stats.total_boxes);
+    drawStatRow("Boxes drawn", boxes_text);
+    ImGui::Checkbox("Dynamic resolution", &style.dynamic_resolution);
+    if (!style.dynamic_resolution) {
+        ImGui::SliderFloat("Scale", &style.fixed_scale, 0.5f, 1.0f, "%.2f");
+    }
+    const char* msaa_names[] = {"Off", "2x", "4x"};
+    int msaa_index = style.msaa_samples >= 4 ? 2 : (style.msaa_samples >= 2 ? 1 : 0);
+    if (ImGui::Combo("MSAA", &msaa_index, msaa_names, 3)) {
+        style.msaa_samples = msaa_index == 0 ? 0 : (msaa_index == 1 ? 2 : 4);
+    }
 
     ImGui::Separator();
 
@@ -292,7 +326,7 @@ void DebugUi::draw(const gameplay::GameState& gameplay, const app::InputState& i
     // A crosshair at the centre of the view while the rifle is ready and not aimed
     // down the scope (the scope has its own reticle).
     const gameplay::WeaponState& weapon = gameplay.weapon();
-    if (weapon.active() == gameplay::WeaponSlot::Rifle && weapon.aim() < 0.5f) {
+    if (weapon.active() == gameplay::WeaponSlot::Rifle && weapon.aim() < 0.5f && !gameplay.driving()) {
         drawCrosshair(ImGui::GetMainViewport()->GetCenter());
     }
 }
@@ -371,6 +405,15 @@ bool DebugUi::handleEvent(const SDL_Event* event) {
 
 bool DebugUi::wantsMouse() const {
     return ImGui::GetIO().WantCaptureMouse;
+}
+
+void DebugUi::setMouseEnabled(bool enabled) {
+    ImGuiIO& io = ImGui::GetIO();
+    if (enabled) {
+        io.ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
+    } else {
+        io.ConfigFlags |= ImGuiConfigFlags_NoMouse;
+    }
 }
 
 bool DebugUi::wantsKeyboard() const {

@@ -42,6 +42,10 @@ public:
     // impact_distance, when given, receives where the shot ended: the hit, or max_distance.
     bool shoot(const Ray& ray, float max_distance = kRange, float* impact_distance = nullptr);
 
+    // Knocks down every standing target whose footprint a ground circle overlaps (a car
+    // driving through). Returns how many fell. These do not count as shots or hits.
+    int knockDownInCircle(float x, float z, float radius);
+
     const std::array<Target, kCount>& targets() const { return targets_; }
     int shots() const { return shots_; }
     int hits() const { return hits_; }

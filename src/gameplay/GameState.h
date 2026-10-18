@@ -2,6 +2,9 @@
 
 #include "gameplay/Targets.h"
 #include "gameplay/WeaponState.h"
+#include "physics/Vehicle.h"
+
+#include <vector>
 
 namespace app {
 struct InputState;
@@ -25,9 +28,14 @@ public:
 
     // Puts the shooting targets on the terrain. Call once the world is set up.
     void placeTargets(const world::World& world);
+    // Parks a car at each of the city's parking spots.
+    void spawnVehicles(const world::World& world);
 
     // Off: the camera keeps the angle the player left it at, for inspecting the model.
     void setAutoRecenter(bool enabled);
+
+    // Moves the warrior (on foot) to a ground position and heading, at rest.
+    void setPlayerPosition(float x, float z, float yaw);
 
     float playerX() const;
     float playerZ() const;
@@ -43,6 +51,15 @@ public:
 
     // The shooting range.
     const Targets& targets() const;
+
+    // Cars. The one being driven is vehicles()[drivenVehicle()].
+    const std::vector<physics::Vehicle>& vehicles() const { return vehicles_; }
+    bool driving() const { return driven_ >= 0; }
+    int drivenVehicle() const { return driven_; }
+    // The car close enough to get into, or -1.
+    int vehicleInReach() const;
+    static constexpr float kEnterReach = 1.4f;    // metres from the car's body
+    static constexpr float kExitMaxSpeed = 7.0f;  // m/s: faster than this, F does not bail out
 
     // The latest shot: where it ended, and whether it hit a target. age is the
     // seconds since it was fired (large before the first shot).
@@ -71,6 +88,17 @@ public:
     // the eye moves to the right shoulder and looks down the rifle's aim line.
     void cameraView(float eye[3], float look[3]) const;
 
+    // cameraView with the camera shake added. For drawing only: shots and aim use the
+    // steady view, so shake never moves where a bullet goes.
+    void renderCameraView(float eye[3], float look[3]) const;
+
+    // Vertical field of view in radians: narrower when aimed, wider at speed in a car.
+    float cameraFov() const;
+
+    // Camera trauma, 0..1: added by shots and crashes, decaying over time. The visible
+    // shake is its square, so small knocks barely show (Eiserloh, GDC 2016).
+    float trauma() const { return trauma_; }
+
     // The rifle's grip while aimed: a point on the aim line in front of the right
     // shoulder. The rifle is placed on it, and the eye sits behind it.
     void sightGrip(float out[3]) const;
@@ -86,8 +114,16 @@ public:
 
 private:
     enum class Clip { Idle, Walk, Run, CrouchIdle, CrouchWalk };
-    // Nearest wall the ray hits, or a distance beyond any range when it hits none.
-    float nearestWallDistance(const Ray& ray) const;
+    // Nearest wall or car the ray hits, or a distance beyond any range when it hits none.
+    // skip_vehicle is a car to ignore (the one being driven, for the camera).
+    float nearestWallDistance(const Ray& ray, int skip_vehicle = -1, int* hit_vehicle = nullptr) const;
+
+    void updateOnFoot(const app::InputState& input, physics::Physics& physics, const world::World& world, float delta_time,
+        const app::InputState& moves);
+    void updateVehicles(const app::InputState& input, const world::World& world, float delta_time);
+    void collideVehiclePair(physics::Vehicle& a, physics::Vehicle& b);
+    void enterOrExit(const world::World& world);
+    void addTrauma(float amount);
 
     float player_x_ = 0.0f;
     float player_z_ = 0.0f;
@@ -112,6 +148,7 @@ private:
     bool auto_recenter_ = true;
     float pitch_target_ = 0.18f;  // looks slightly down, so centre shots clear the low wall
     float distance_target_ = 3.2f;
+    float car_distance_target_ = 6.5f;
 
     // Smoothed camera state that follows the targets above, with the spring
     // velocities that smoothing carries from frame to frame.
@@ -123,10 +160,15 @@ private:
     float camera_target_z_ = 0.0f;
     float camera_target_x_speed_ = 0.0f;
     float camera_target_z_speed_ = 0.0f;
+    float fov_boost_ = 0.0f;   // smoothed extra field of view at speed (radians)
+    float trauma_ = 0.0f;
+    float shake_time_ = 0.0f;  // drives the shake noise
 
     WeaponState weapon_;
     Targets targets_;
-    const world::World* world_ = nullptr;  // for its walls; set by placeTargets
+    std::vector<physics::Vehicle> vehicles_;
+    int driven_ = -1;
+    const world::World* world_ = nullptr;  // for its walls; set by placeTargets and update
 };
 
 } // namespace gameplay

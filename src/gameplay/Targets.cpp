@@ -1,5 +1,6 @@
 #include "gameplay/Targets.h"
 
+#include "math/Geometry.h"
 #include "world/World.h"
 
 #include <cmath>
@@ -80,31 +81,29 @@ bool Targets::shoot(const Ray& ray, float max_distance, float* impact_distance) 
     return true;
 }
 
-float rayBoxDistance(const Ray& ray, const float box_min[3], const float box_max[3]) {
-    // Slab test: intersect the ray with the three pairs of parallel planes.
-    float t_near = 0.0f;
-    float t_far = std::numeric_limits<float>::infinity();
-    for (int axis = 0; axis < 3; ++axis) {
-        if (std::fabs(ray.direction[axis]) < 1e-9f) {
-            if (ray.origin[axis] < box_min[axis] || ray.origin[axis] > box_max[axis]) {
-                return -1.0f;
-            }
+int Targets::knockDownInCircle(float x, float z, float radius) {
+    int fallen = 0;
+    for (Target& target : targets_) {
+        if (!target.standing) {
             continue;
         }
-        float t0 = (box_min[axis] - ray.origin[axis]) / ray.direction[axis];
-        float t1 = (box_max[axis] - ray.origin[axis]) / ray.direction[axis];
-        if (t0 > t1) {
-            const float swap = t0;
-            t0 = t1;
-            t1 = swap;
-        }
-        t_near = t0 > t_near ? t0 : t_near;
-        t_far = t1 < t_far ? t1 : t_far;
-        if (t_near > t_far) {
-            return -1.0f;
+        const float half = target.size * 0.5f;
+        const float lo[3] = {target.center[0] - half, 0.0f, target.center[2] - half};
+        const float hi[3] = {target.center[0] + half, 0.0f, target.center[2] + half};
+        float nx = 0.0f;
+        float nz = 0.0f;
+        float depth = 0.0f;
+        if (math::circleBoxPush(x, z, radius, lo, hi, nx, nz, depth)) {
+            target.standing = false;
+            target.time_down = 0.0f;
+            ++fallen;
         }
     }
-    return t_near;
+    return fallen;
+}
+
+float rayBoxDistance(const Ray& ray, const float box_min[3], const float box_max[3]) {
+    return math::rayBoxDistance(ray.origin, ray.direction, box_min, box_max);
 }
 
 } // namespace gameplay

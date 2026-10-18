@@ -160,15 +160,33 @@ int main() {
         if (speed_at_start < 1.3f || slide > 0.10f) ++failures;
     }
 
-    // 6. The world edge holds: walking into it stops the player inside the terrain.
-    //    (Walks along +X, which is clear of the walls.)
+    // 6. The city edge holds: walking out from the ring road stops the player inside it.
+    //    (Starts on the ring road, which is clear of buildings, and walks along +X.)
     {
         Sim sim;
+        sim.game.setPlayerPosition(world::World::kCityHalfSize - 6.0f, 0.0f, 0.0f);
         sim.input.keys.a = true;  // +X, with the camera behind the start point
-        sim.step(30.0f);
-        const float edge = world::World::kHalfSize - 0.5f;
+        sim.step(10.0f);
+        const float edge = world::World::kCityHalfSize - 0.5f;
         std::printf("edge: stopped at x = %.2f (want %.2f)\n", sim.game.playerX(), edge);
         if (std::fabs(sim.game.playerX() - edge) > 0.01f) ++failures;
+    }
+
+    // 6b. Buildings stop the warrior: walking +X from the park meets the first block's
+    //     buildings, and he never ends up inside one.
+    {
+        Sim sim;
+        sim.input.keys.a = true;
+        sim.step(40.0f);
+        bool inside = false;
+        for (const world::Box& b : sim.world.walls()) {
+            if (sim.game.playerX() > b.min[0] && sim.game.playerX() < b.max[0] && sim.game.playerZ() > b.min[2] &&
+                sim.game.playerZ() < b.max[2]) {
+                inside = true;
+            }
+        }
+        std::printf("building: walked to x = %.2f, inside a building: %s (want no, x < 60)\n", sim.game.playerX(), inside ? "yes" : "no");
+        if (inside || sim.game.playerX() > 60.0f) ++failures;
     }
 
     // 7. Walls: walking into the low wall stops the warrior short of its face.
@@ -209,6 +227,60 @@ int main() {
         toggled.step(0.1f);
         if (toggled.game.crouched()) ++failures;
         std::printf("crouch toggles on and off with the key: %s\n", failures == 0 ? "yes" : "see above");
+    }
+
+    // 9. Cars: F next to a car gets in; W drives it; F at a stop gets out beside it.
+    {
+        Sim sim;
+        sim.game.spawnVehicles(sim.world);
+        const auto& car0 = sim.game.vehicles()[0];
+        // Beside the front corner (3.25 m from the centre, 1.2 m from the body) is in
+        // reach; 3 m out from the side is not.
+        sim.game.setPlayerPosition(car0.position().x + 2.0f, car0.position().z + 2.55f, 0.0f);
+        sim.step(kStep);
+        const bool corner_reach = sim.game.vehicleInReach() == 0;
+        sim.game.setPlayerPosition(car0.position().x + 3.9f, car0.position().z, 0.0f);
+        sim.step(kStep);
+        const bool far_reach = sim.game.vehicleInReach() == 0;
+        std::printf("car reach: by the front corner %s (want yes), 3 m from the side %s (want no)\n", corner_reach ? "yes" : "no",
+            far_reach ? "yes" : "no");
+        if (!corner_reach || far_reach) ++failures;
+        sim.game.setPlayerPosition(car0.position().x + 2.0f, car0.position().z, 0.0f);
+        sim.step(0.1f);
+        const bool reach = sim.game.vehicleInReach() == 0;
+        sim.input.use_pressed = true;
+        sim.step(kStep);
+        sim.input.use_pressed = false;
+        const bool in_car = sim.game.driving();
+        const float z0 = sim.game.vehicles()[0].position().z;
+        sim.input.keys.w = true;
+        sim.step(2.0f);
+        sim.input.keys.w = false;
+        const float driven = sim.game.vehicles()[0].position().z - z0;
+        const bool follows = std::fabs(sim.game.playerZ() - sim.game.vehicles()[0].position().z) < 0.01f;
+        sim.input.keys.s = true;  // brake to a stop
+        sim.step(3.0f);
+        sim.input.keys.s = false;
+        sim.step(0.5f);
+        sim.input.use_pressed = true;
+        sim.step(kStep);
+        sim.input.use_pressed = false;
+        const auto& car = sim.game.vehicles()[0];
+        const float gap = std::hypot(sim.game.playerX() - car.position().x, sim.game.playerZ() - car.position().z);
+        std::printf("car: in reach %s, got in %s, drove %.1f m in 2 s, player follows %s, got out %s at %.2f m from it\n",
+            reach ? "yes" : "no", in_car ? "yes" : "no", driven, follows ? "yes" : "no", sim.game.driving() ? "no" : "yes", gap);
+        if (!reach || !in_car || driven < 5.0f || !follows || sim.game.driving() || gap > 2.0f || gap < 1.0f) ++failures;
+
+        // On foot, the warrior cannot walk through the car.
+        sim.game.setPlayerPosition(car.position().x + 3.0f, car.position().z, 0.0f);
+        sim.input.keys.d = true;  // -X, toward the car
+        sim.step(3.0f);
+        sim.input.keys.d = false;
+        float nx, nz, depth;
+        const bool overlaps = car.circleOverlap(sim.game.playerX(), sim.game.playerZ(), 0.34f, nx, nz, depth);
+        std::printf("walk into a car: stopped at %.2f m from its centre, overlapping %s (want no)\n",
+            std::fabs(sim.game.playerX() - car.position().x), overlaps ? "yes" : "no");
+        if (overlaps) ++failures;
     }
 
     std::printf(failures == 0 ? "MOVEMENT OK\n" : "%d FAILURE(S)\n", failures);

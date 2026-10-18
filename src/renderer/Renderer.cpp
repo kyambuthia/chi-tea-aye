@@ -7,7 +7,11 @@
 #include "gameplay/WeaponState.h"
 #include "assets/StaticModel.h"
 #include "math/Mat4.h"
-#include "renderer/GlApi.h"
+#include "renderer/CityPass.h"
+#include "renderer/GlUtil.h"
+#include "renderer/PostPass.h"
+#include "renderer/ResolutionScale.h"
+#include "renderer/ShaderChunks.h"
 #include "world/World.h"
 
 #include <cmath>
@@ -26,6 +30,11 @@ using math::Mat4;
 
 constexpr float kPi = 3.14159265358979323846f;
 constexpr int kGroundCells = 80;
+// The near plane stays close for the scope and the F3 camera; the far plane sits
+// past the fog, so the 24-bit depth buffer still separates distant facades.
+constexpr float kNearPlane = 0.05f;
+constexpr float kFarPlane = 650.0f;
+constexpr float kCullDistance = 520.0f;  // boxes beyond this are lost in the haze
 constexpr float kGroundHalfSize = world::World::kHalfSize;
 constexpr int kJoints = assets::kMaxJoints;
 
@@ -43,12 +52,6 @@ constexpr float kSpineBendLimit = 0.5f;
 const math::Mat4 kPistolGrip = math::identity();
 
 static_assert(kJoints == 32, "the skinning shader declares joints[32]");
-
-#if defined(CHI_GLES)
-#define CHI_GLSL_HEADER "#version 300 es\nprecision highp float;\n"
-#else
-#define CHI_GLSL_HEADER "#version 330\n"
-#endif
 
 // Skinning for the toon shader. Vertices with zero total weight (static
 // scenery) keep their model-space position.
@@ -97,11 +100,10 @@ std::string toonVertexShaderSource() {
 }
 
 std::string toonFragmentShaderSource() {
-    return std::string(CHI_GLSL_HEADER) + R"(
-        uniform vec4 light_dir_bands;
+    return std::string(CHI_GLSL_HEADER) + kAtmosphereGlsl + R"(
+        uniform vec4 light_dir_bands;  // w: toon bands (the direction comes from the sun)
         uniform vec4 style;
         uniform vec4 surface;
-        uniform vec3 eye_pos;
         uniform sampler2D base_color;
 
         in vec3 normal;
@@ -113,7 +115,25 @@ std::string toonFragmentShaderSource() {
 
         void main() {
             vec3 n = normalize(normal);
-            vec3 light_dir = normalize(light_dir_bands.xyz);
+
+            if (surface.x > 0.5) {
+                // The park: mown grass in stripes, with the sidewalk ring at its edge.
+                vec2 p = world_pos.xz;
+                float grain = groundGrain(p);
+                vec3 c;
+                if (max(abs(p.x), abs(p.y)) > 19.0) {
+                    c = vec3(0.40, 0.39, 0.37) + grain;
+                } else {
+                    float stripe = step(0.5, fract((p.x + p.y * 0.15) / 3.0));
+                    c = mix(vec3(0.15, 0.23, 0.09), vec3(0.18, 0.27, 0.11), stripe) + grain * vec3(0.6, 1.0, 0.4);
+                }
+                vec3 lit = c * (sun_color * max(dot(n, sun_dir), 0.0) * 0.9 + hemiAmbient(n));
+                lit += c * vec3(1.0, 0.62, 0.30) * lampPools(p) * fog_params.y * 2.2;
+                frag_color = vec4(applyFog(lit, world_pos), 1.0);
+                return;
+            }
+
+            vec3 light_dir = normalize(sun_dir);
             float ndotl = max(dot(n, light_dir), 0.0);
             float bands = max(light_dir_bands.w, 2.0);
             float shade = floor(ndotl * bands) / (bands - 1.0);
@@ -128,7 +148,7 @@ std::string toonFragmentShaderSource() {
             float fill = 0.10 + 0.08 * max(n.y, 0.0) + 0.18 * facing;
             vec3 final_color = albedo * (ink_shadow + fill) + albedo * 0.25 * rim;
 
-            if ((surface.x < 0.5) && (style.x > 0.5)) {
+            if (style.x > 0.5) {
                 vec3 object_coord = (local_pos + vec3(0.5)) * max(style.z, 1.0);
                 vec2 pattern_uv = abs(n.y) > 0.5 ? object_coord.xz : (abs(n.x) > 0.5 ? object_coord.zy : object_coord.xy);
                 // One round dot per cell. Shadowed areas get bigger dots.
@@ -140,31 +160,13 @@ std::string toonFragmentShaderSource() {
             }
 
             // Props are brightened by surface.y so dark metal and wood read against the body.
-            if (surface.x < 0.5) {
-                final_color *= 1.0 + surface.y;
-            }
+            final_color *= 1.0 + surface.y;
 
-            if (surface.x > 0.5) {
-                vec2 grid_coord = world_pos.xz;
-                vec2 grid_deriv = fwidth(grid_coord);
-                vec2 minor_dist = abs(fract(grid_coord - 0.5) - 0.5);
-                vec2 minor_line = 1.0 - smoothstep(vec2(0.0), grid_deriv * 1.25, minor_dist);
-                float minor = max(minor_line.x, minor_line.y);
-
-                vec2 major_coord = grid_coord / 4.0;
-                vec2 major_deriv = fwidth(major_coord);
-                vec2 major_dist = abs(fract(major_coord - 0.5) - 0.5);
-                vec2 major_line = 1.0 - smoothstep(vec2(0.0), major_deriv * 1.6, major_dist);
-                float major = max(major_line.x, major_line.y);
-
-                vec3 base = vec3(0.08, 0.09, 0.11);
-                vec3 minor_color = vec3(0.22, 0.24, 0.28);
-                vec3 major_color = vec3(0.42, 0.44, 0.50);
-                final_color = mix(base, minor_color, minor * 0.75);
-                final_color = mix(final_color, major_color, major * 0.95);
-            }
-
-            frag_color = vec4(final_color, 1.0);
+            // The time of day tints the toon shading, so the warrior sits in the scene.
+            vec3 tint = clamp(sun_color * 0.55 + amb_sky * 0.9, vec3(0.28), vec3(1.1));
+            final_color *= tint;
+            final_color += albedo * vec3(1.0, 0.62, 0.30) * lampPools(world_pos.xz) * fog_params.y * 0.8;
+            frag_color = vec4(applyFog(final_color, world_pos), 1.0);
         }
     )";
 }
@@ -223,122 +225,6 @@ std::string scopeFragmentShaderSource() {
             frag_color = vec4(0.0, 0.0, 0.0, reticle * alpha);
         }
     )";
-}
-
-// Vertex layout shared by every program: attribute locations are fixed so a
-// single attribute setup works for both static and skinned meshes.
-enum AttributeLocation : GLuint {
-    kAttrPosition = 0,
-    kAttrNormal = 1,
-    kAttrColor = 2,
-    kAttrUv = 3,
-    kAttrJoints = 4,
-    kAttrWeights = 5,
-};
-
-GLuint buildProgram(const std::string& vertex_source, const std::string& fragment_source, const char* label) {
-    auto compile = [label](GLenum type, const std::string& source) {
-        const GLuint shader = glCreateShader(type);
-        const char* text = source.c_str();
-        glShaderSource(shader, 1, &text, nullptr);
-        glCompileShader(shader);
-        GLint ok = 0;
-        glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
-        if (ok == 0) {
-            char log[2048]{};
-            glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
-            std::fprintf(stderr, "[renderer] %s shader compile failed: %s\n", label, log);
-            glDeleteShader(shader);
-            return GLuint{0};
-        }
-        return shader;
-    };
-
-    const GLuint vs = compile(GL_VERTEX_SHADER, vertex_source);
-    const GLuint fs = compile(GL_FRAGMENT_SHADER, fragment_source);
-    if (vs == 0 || fs == 0) {
-        return 0;
-    }
-
-    const GLuint program = glCreateProgram();
-    glAttachShader(program, vs);
-    glAttachShader(program, fs);
-    glBindAttribLocation(program, kAttrPosition, "position");
-    glBindAttribLocation(program, kAttrNormal, "normal0");
-    glBindAttribLocation(program, kAttrColor, "color0");
-    glBindAttribLocation(program, kAttrUv, "uv0");
-    glBindAttribLocation(program, kAttrJoints, "joints0");
-    glBindAttribLocation(program, kAttrWeights, "weights0");
-    glLinkProgram(program);
-    glDeleteShader(vs);
-    glDeleteShader(fs);
-
-    GLint ok = 0;
-    glGetProgramiv(program, GL_LINK_STATUS, &ok);
-    if (ok == 0) {
-        char log[2048]{};
-        glGetProgramInfoLog(program, sizeof(log), nullptr, log);
-        std::fprintf(stderr, "[renderer] %s program link failed: %s\n", label, log);
-        return 0;
-    }
-    return program;
-}
-
-void setVertexLayout() {
-    const GLsizei stride = sizeof(MeshVertex);
-    glEnableVertexAttribArray(kAttrPosition);
-    glVertexAttribPointer(kAttrPosition, 3, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<const void*>(offsetof(MeshVertex, position)));
-    glEnableVertexAttribArray(kAttrNormal);
-    glVertexAttribPointer(kAttrNormal, 3, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<const void*>(offsetof(MeshVertex, normal)));
-    glEnableVertexAttribArray(kAttrColor);
-    glVertexAttribPointer(kAttrColor, 4, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<const void*>(offsetof(MeshVertex, color)));
-    glEnableVertexAttribArray(kAttrUv);
-    glVertexAttribPointer(kAttrUv, 2, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<const void*>(offsetof(MeshVertex, uv)));
-    glEnableVertexAttribArray(kAttrJoints);
-    glVertexAttribPointer(kAttrJoints, 4, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<const void*>(offsetof(MeshVertex, joints)));
-    glEnableVertexAttribArray(kAttrWeights);
-    glVertexAttribPointer(kAttrWeights, 4, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<const void*>(offsetof(MeshVertex, weights)));
-}
-
-struct GpuMesh {
-    GLuint vao = 0;
-    GLuint vbo = 0;
-    GLuint ibo = 0;
-    GLsizei index_count = 0;
-};
-
-GpuMesh uploadMesh(const MeshVertex* vertices, size_t vertex_count, const uint16_t* indices, size_t index_count) {
-    GpuMesh mesh;
-    mesh.index_count = static_cast<GLsizei>(index_count);
-
-    glGenVertexArrays(1, &mesh.vao);
-    glBindVertexArray(mesh.vao);
-
-    glGenBuffers(1, &mesh.vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
-    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(vertex_count * sizeof(MeshVertex)), vertices, GL_STATIC_DRAW);
-
-    glGenBuffers(1, &mesh.ibo);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.ibo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLsizeiptr>(index_count * sizeof(uint16_t)), indices, GL_STATIC_DRAW);
-
-    setVertexLayout();
-    glBindVertexArray(0);
-    return mesh;
-}
-
-GLuint uploadTexture(const uint8_t* rgba, int width, int height) {
-    GLuint texture = 0;
-    glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
-    glGenerateMipmap(GL_TEXTURE_2D);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glBindTexture(GL_TEXTURE_2D, 0);
-    return texture;
 }
 
 // A unit cube centred on the origin, in one colour. Faces are counter-clockwise seen from outside.
@@ -425,7 +311,7 @@ Mat4 perspectiveFor(int width, int height, float fov_radians) {
     const float aspect = width > 0 && height > 0
         ? static_cast<float>(width) / static_cast<float>(height)
         : 16.0f / 9.0f;
-    return math::perspective(fov_radians, aspect, 0.01f, 100.0f);
+    return math::perspective(fov_radians, aspect, kNearPlane, kFarPlane);
 }
 
 } // namespace
@@ -443,7 +329,6 @@ struct Renderer::Impl {
     GLint toon_joints = -1;
     GLint toon_light_dir_bands = -1;
     GLint toon_style = -1;
-    GLint toon_eye = -1;
     float clip_time = 0.0f;      // last frame: time within the clip, wrapped
     const char* played_clip = "Idle";
     Mat4 last_view_projection = math::identity();
@@ -468,7 +353,6 @@ struct Renderer::Impl {
     GpuMesh rifle_mesh;
     GpuMesh pistol_mesh;
     GpuMesh cube_mesh;  // shooting targets
-    GpuMesh wall_mesh;  // walls
     GLuint rifle_texture = 0;
     GLuint pistol_texture = 0;
     int hand_joint = -1;
@@ -478,48 +362,13 @@ struct Renderer::Impl {
     assets::GroundHeightFn ground_height;
     Mat4 joint_matrices[kJoints]{};
     StyleSettings style{};
-};
 
-// Builds a program from sources with position-only input at attribute 0.
-GLuint buildFlatProgram(const std::string& vertex_source, const std::string& fragment_source, const char* label) {
-    auto compile = [label](GLenum type, const std::string& source) {
-        const GLuint shader = glCreateShader(type);
-        const char* text = source.c_str();
-        glShaderSource(shader, 1, &text, nullptr);
-        glCompileShader(shader);
-        GLint ok = 0;
-        glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
-        if (ok == 0) {
-            char log[2048]{};
-            glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
-            std::fprintf(stderr, "[renderer] %s shader compile failed: %s\n", label, log);
-            glDeleteShader(shader);
-            return GLuint{0};
-        }
-        return shader;
-    };
-    const GLuint vs = compile(GL_VERTEX_SHADER, vertex_source);
-    const GLuint fs = compile(GL_FRAGMENT_SHADER, fragment_source);
-    if (vs == 0 || fs == 0) {
-        return 0;
-    }
-    const GLuint program = glCreateProgram();
-    glAttachShader(program, vs);
-    glAttachShader(program, fs);
-    glBindAttribLocation(program, kAttrPosition, "position");
-    glLinkProgram(program);
-    glDeleteShader(vs);
-    glDeleteShader(fs);
-    GLint ok = 0;
-    glGetProgramiv(program, GL_LINK_STATUS, &ok);
-    if (ok == 0) {
-        char log[2048]{};
-        glGetProgramInfoLog(program, sizeof(log), nullptr, log);
-        std::fprintf(stderr, "[renderer] %s program link failed: %s\n", label, log);
-        return 0;
-    }
-    return program;
-}
+    CityPass city;
+    PostPass post;
+    ResolutionScale resolution;
+    AtmosphereUniforms toon_atmosphere;
+    Stats stats;
+};
 
 void Renderer::init(const assets::CharacterModel& character, const world::World& world, const assets::StaticMesh& rifle,
     const assets::StaticMesh& pistol) {
@@ -557,10 +406,6 @@ void Renderer::init(const assets::CharacterModel& character, const world::World&
     buildCube(cube_vertices, cube_indices, target_color);
     impl_->cube_mesh = uploadMesh(cube_vertices.data(), cube_vertices.size(), cube_indices.data(), cube_indices.size());
 
-    const float wall_color[3] = {0.46f, 0.43f, 0.39f};
-    buildCube(cube_vertices, cube_indices, wall_color);
-    impl_->wall_mesh = uploadMesh(cube_vertices.data(), cube_vertices.size(), cube_indices.data(), cube_indices.size());
-
     const uint8_t white[4] = {255, 255, 255, 255};
     impl_->white_texture = uploadTexture(white, 1, 1);
     impl_->ground_texture = impl_->white_texture;
@@ -568,20 +413,20 @@ void Renderer::init(const assets::CharacterModel& character, const world::World&
         ? impl_->white_texture
         : uploadTexture(mesh.base_color_rgba.data(), mesh.texture_width, mesh.texture_height);
 
-    impl_->toon_program = buildProgram(toonVertexShaderSource(), toonFragmentShaderSource(), "toon");
+    impl_->toon_program = buildMeshProgram(toonVertexShaderSource(), toonFragmentShaderSource(), "toon");
     if (impl_->toon_program != 0) {
         impl_->toon_mvp = glGetUniformLocation(impl_->toon_program, "mvp");
         impl_->toon_model = glGetUniformLocation(impl_->toon_program, "model");
         impl_->toon_joints = glGetUniformLocation(impl_->toon_program, "joints");
         impl_->toon_light_dir_bands = glGetUniformLocation(impl_->toon_program, "light_dir_bands");
         impl_->toon_style = glGetUniformLocation(impl_->toon_program, "style");
-        impl_->toon_eye = glGetUniformLocation(impl_->toon_program, "eye_pos");
         impl_->toon_surface = glGetUniformLocation(impl_->toon_program, "surface");
+        impl_->toon_atmosphere.locate(impl_->toon_program);
         glUseProgram(impl_->toon_program);
         glUniform1i(glGetUniformLocation(impl_->toon_program, "base_color"), 0);
     }
 
-    impl_->skeleton_program = buildFlatProgram(skeletonVertexShaderSource(), skeletonFragmentShaderSource(), "skeleton");
+    impl_->skeleton_program = buildProgram(skeletonVertexShaderSource(), skeletonFragmentShaderSource(), "skeleton", {{kAttrPosition, "position"}});
     if (impl_->skeleton_program != 0) {
         impl_->skeleton_mvp = glGetUniformLocation(impl_->skeleton_program, "mvp");
         impl_->skeleton_color = glGetUniformLocation(impl_->skeleton_program, "color");
@@ -589,7 +434,7 @@ void Renderer::init(const assets::CharacterModel& character, const world::World&
     glGenVertexArrays(1, &impl_->skeleton_vao);
     glGenBuffers(1, &impl_->skeleton_vbo);
 
-    impl_->scope_program = buildFlatProgram(scopeVertexShaderSource(), scopeFragmentShaderSource(), "scope");
+    impl_->scope_program = buildProgram(scopeVertexShaderSource(), scopeFragmentShaderSource(), "scope", {{kAttrPosition, "position"}});
     if (impl_->scope_program != 0) {
         impl_->scope_aspect = glGetUniformLocation(impl_->scope_program, "aspect");
         impl_->scope_alpha = glGetUniformLocation(impl_->scope_program, "alpha");
@@ -604,6 +449,11 @@ void Renderer::init(const assets::CharacterModel& character, const world::World&
     glVertexAttribPointer(kAttrPosition, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), nullptr);
     glBindVertexArray(0);
 
+    if (!impl_->city.init(world)) {
+        std::fprintf(stderr, "[renderer] city pass failed to build; the city will not draw\n");
+    }
+    impl_->post.init();
+
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LEQUAL);
     glEnable(GL_CULL_FACE);
@@ -611,14 +461,48 @@ void Renderer::init(const assets::CharacterModel& character, const world::World&
     glFrontFace(GL_CCW);
 }
 
-void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, int framebuffer_height) {
-    glViewport(0, 0, framebuffer_width, framebuffer_height);
-    glClearColor(0.08f, 0.09f, 0.11f, 1.0f);
+void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, int framebuffer_height, float frame_seconds) {
+    StyleSettings& style_settings = impl_->style;
+    if (style_settings.advance_time) {
+        style_settings.time_of_day = std::fmod(style_settings.time_of_day + frame_seconds / 60.0f, 24.0f);
+    }
+    const Atmosphere atmosphere = atmosphereAt(style_settings.time_of_day, style_settings.fog_scale);
+
+    // The scene goes to the offscreen target at the dynamic scale, or straight to the
+    // window if that target is not available.
+    impl_->resolution.setEnabled(style_settings.dynamic_resolution);
+    impl_->resolution.setFixedScale(style_settings.fixed_scale);
+    const ResolutionScale::Quality quality = impl_->resolution.update(frame_seconds, framebuffer_width, framebuffer_height);
+    const float scale = quality.scale;
+    const bool offscreen = impl_->post.begin(framebuffer_width, framebuffer_height, scale, quality.msaa ? style_settings.msaa_samples : 0);
+    if (!offscreen) {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glViewport(0, 0, framebuffer_width, framebuffer_height);
+    }
+    impl_->stats.render_scale = offscreen ? scale : 1.0f;
+    impl_->stats.offscreen = offscreen;
+    impl_->stats.scene_width = offscreen ? impl_->post.sceneWidth() : framebuffer_width;
+    impl_->stats.scene_height = offscreen ? impl_->post.sceneHeight() : framebuffer_height;
+    impl_->stats.samples = offscreen ? impl_->post.samples() : 0;
+
+    glClearColor(atmosphere.sky_horizon[0], atmosphere.sky_horizon[1], atmosphere.sky_horizon[2], 1.0f);
 #if defined(CHI_GLES)
     glClearDepthf(1.0f);
 #else
     glClearDepth(1.0);
 #endif
+    // Set every piece of state the passes rely on: the UI drawn last frame leaves
+    // blending and scissoring on and culling off, and is not asked to restore them.
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_BLEND);
+    glDisable(GL_STENCIL_TEST);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glFrontFace(GL_CCW);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LEQUAL);
+    glDepthMask(GL_TRUE);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     // The player model stands at the player position.
@@ -627,27 +511,41 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
 
     // Third-person camera: looks at the upper body from behind and above.
     // Orbit view, or the sight view from the right shoulder while aimed (see cameraView).
+    // The drawn view includes camera shake; shots use the steady one.
     float eye[3];
     float look[3];
-    gameplay.cameraView(eye, look);
+    gameplay.renderCameraView(eye, look);
     const float eye_x = eye[0];
     const float eye_y = eye[1];
     const float eye_z = eye[2];
     const Mat4 view = math::lookAt(eye_x, eye_y, eye_z, look[0], look[1], look[2]);
-    // Aiming narrows the view from 60 to 30 degrees.
-    const float aim = gameplay.weapon().aim();
-    const float fov = (60.0f - 30.0f * aim) * kPi / 180.0f;
+    // Aiming narrows the view; speed in a car widens it.
+    const float fov = gameplay.cameraFov();
     const Mat4 view_projection = math::multiply(perspectiveFor(framebuffer_width, framebuffer_height, fov), view);
     impl_->last_view_projection = view_projection;
 
+    // The city: floor and every box, frustum culled, in one instanced draw.
+    CityFrame city_frame{};
+    city_frame.view_projection = view_projection;
+    city_frame.frustum = math::Frustum::fromViewProjection(view_projection);
+    for (int c = 0; c < 3; ++c) {
+        city_frame.eye[c] = eye[c];
+        // lookAt's rows are the camera's right, up and back axes.
+        city_frame.right[c] = view.m[c * 4 + 0];
+        city_frame.up[c] = view.m[c * 4 + 1];
+        city_frame.forward[c] = -view.m[c * 4 + 2];
+    }
+    city_frame.tan_half_fov = std::tan(0.5f * fov);
+    city_frame.aspect = framebuffer_height > 0 ? static_cast<float>(framebuffer_width) / static_cast<float>(framebuffer_height) : 1.0f;
+    city_frame.atmosphere = atmosphere;
+    city_frame.max_distance = kCullDistance;
+    impl_->city.drawOpaque(city_frame, gameplay);
+    impl_->stats.visible_boxes = impl_->city.visibleInstances();
+    impl_->stats.total_boxes = impl_->city.totalInstances();
+
     // brighten lifts a prop's dark metal and wood out of the body's shadows.
     auto setToonSurface = [this](bool ground, float brighten = 0.0f) {
-        const float light[4] = {
-            impl_->style.light_x,
-            impl_->style.light_y,
-            impl_->style.light_z,
-            std::floor(impl_->style.toon_bands + 0.5f),
-        };
+        const float light[4] = {0.0f, 0.0f, 0.0f, std::floor(impl_->style.toon_bands + 0.5f)};
         const float style[4] = {
             impl_->style.halftone_enabled ? 1.0f : 0.0f,
             impl_->style.halftone_intensity,
@@ -661,7 +559,7 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     };
 
     glUseProgram(impl_->toon_program);
-    glUniform3f(impl_->toon_eye, eye_x, eye_y, eye_z);
+    impl_->toon_atmosphere.set(atmosphere, eye);
     glActiveTexture(GL_TEXTURE0);
 
     // Ground: static geometry, so the skinning path is skipped.
@@ -789,11 +687,13 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     setToonSurface(false);
     glBindTexture(GL_TEXTURE_2D, impl_->warrior_texture);
     glBindVertexArray(impl_->warrior.vao);
-    glDrawElements(GL_TRIANGLES, impl_->warrior.index_count, GL_UNSIGNED_SHORT, nullptr);
+    if (!gameplay.driving()) {  // in a car the warrior is out of sight
+        glDrawElements(GL_TRIANGLES, impl_->warrior.index_count, GL_UNSIGNED_SHORT, nullptr);
+    }
 
     // The pistol follows the posed right hand; the rifle uses the placement above.
     // Fists show no prop; a switch lowers the old prop and raises the new one.
-    if (impl_->hand_joint >= 0 && weapon.active() != gameplay::WeaponSlot::Fists) {
+    if (impl_->hand_joint >= 0 && weapon.active() != gameplay::WeaponSlot::Fists && !gameplay.driving()) {
         const bool rifle = weapon.active() == gameplay::WeaponSlot::Rifle;
         const GpuMesh& prop = rifle ? impl_->rifle_mesh : impl_->pistol_mesh;
         if (prop.index_count > 0) {
@@ -814,23 +714,6 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
             glBindTexture(GL_TEXTURE_2D, rifle ? impl_->rifle_texture : impl_->pistol_texture);
             glBindVertexArray(prop.vao);
             glDrawElements(GL_TRIANGLES, prop.index_count, GL_UNSIGNED_SHORT, nullptr);
-        }
-    }
-
-    // Scope: only with the rifle in hand, fading in with the aim.
-    // Walls: grey boxes on the terrain.
-    if (impl_->wall_mesh.index_count > 0) {
-        glBindTexture(GL_TEXTURE_2D, impl_->white_texture);
-        setToonSurface(false);
-        glBindVertexArray(impl_->wall_mesh.vao);
-        for (const world::Box& wall : impl_->world->walls()) {
-            const float centre[3] = {0.5f * (wall.min[0] + wall.max[0]), 0.5f * (wall.min[1] + wall.max[1]), 0.5f * (wall.min[2] + wall.max[2])};
-            const float size[3] = {wall.max[0] - wall.min[0], wall.max[1] - wall.min[1], wall.max[2] - wall.min[2]};
-            const float no_rotation[4] = {0.0f, 0.0f, 0.0f, 1.0f};
-            const Mat4 model = math::fromTrs(centre, no_rotation, size);
-            glUniformMatrix4fv(impl_->toon_mvp, 1, GL_FALSE, math::multiply(view_projection, model).m);
-            glUniformMatrix4fv(impl_->toon_model, 1, GL_FALSE, model.m);
-            glDrawElements(GL_TRIANGLES, impl_->wall_mesh.index_count, GL_UNSIGNED_SHORT, nullptr);
         }
     }
 
@@ -861,7 +744,13 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
         }
     }
 
-    const float scope = weapon.active() == gameplay::WeaponSlot::Rifle ? weapon.aim() : 0.0f;
+    // Contact shadows over the opaque scene, then the sky in whatever is left.
+    const float warrior_at[3] = {px, 0.0f, pz};
+    impl_->city.drawShadows(city_frame, gameplay, warrior_at);
+    impl_->city.drawSky(city_frame);
+
+    // Scope: only with the rifle in hand, fading in with the aim.
+    const float scope = weapon.active() == gameplay::WeaponSlot::Rifle && !gameplay.driving() ? weapon.aim() : 0.0f;
     if (scope > 0.001f && impl_->scope_program != 0) {
         glDisable(GL_DEPTH_TEST);
         glEnable(GL_BLEND);
@@ -924,6 +813,11 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     }
 
     glBindVertexArray(0);
+    impl_->post.end(framebuffer_width, framebuffer_height);
+}
+
+const Renderer::Stats& Renderer::stats() const {
+    return impl_->stats;
 }
 
 float Renderer::clipTime() const {
@@ -972,7 +866,9 @@ void Renderer::cleanup() {
         return;
     }
 
-    for (GpuMesh* mesh : {&impl_->rifle_mesh, &impl_->pistol_mesh, &impl_->cube_mesh, &impl_->wall_mesh}) {
+    impl_->city.cleanup();
+    impl_->post.cleanup();
+    for (GpuMesh* mesh : {&impl_->rifle_mesh, &impl_->pistol_mesh, &impl_->cube_mesh}) {
         if (mesh->vao != 0) {
             glDeleteVertexArrays(1, &mesh->vao);
             glDeleteBuffers(1, &mesh->vbo);
