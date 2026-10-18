@@ -3,7 +3,7 @@
 // OpenGL entry points used by the renderer.
 //
 // Desktop builds (GL 3.3 core) load the functions at runtime through
-// SDL_GL_GetProcAddress. GLES builds (web, Android) link them directly from
+// SDL_GL_GetProcAddress. GLES builds (web) link them directly from
 // the GLES3 headers, so the loader is a no-op there.
 
 #if defined(CHI_GLES)

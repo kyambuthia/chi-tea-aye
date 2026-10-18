@@ -2,31 +2,152 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="chi-tea-aye">
+  <meta name="theme-color" content="#14171c">
   <title>chi-tea-aye</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
   <style>
+    * {
+      box-sizing: border-box;
+    }
     html, body {
       margin: 0;
+      padding: 0;
       width: 100%;
       height: 100%;
       overflow: hidden;
       background: #14171c;
+      color: #e0e0e0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       -webkit-user-select: none;
       user-select: none;
       -webkit-tap-highlight-color: transparent;
       touch-action: none;
+      overscroll-behavior: none;
+      position: fixed;
+      top: 0;
+      left: 0;
     }
     canvas {
       display: block;
+      width: 100vw;
+      height: 100vh;
+      outline: none;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    #loading {
+      position: absolute;
+      top: 0;
+      left: 0;
       width: 100%;
       height: 100%;
-      outline: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background-color: #14171c;
+      z-index: 10;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+    #loading.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    .loading-title {
+      font-size: 1.5rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      margin-bottom: 1.25rem;
+      color: #f0f0f0;
+    }
+    .progress-track {
+      width: min(320px, 80vw);
+      height: 6px;
+      background: #232730;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 0.75rem;
+    }
+    .progress-bar {
+      width: 0%;
+      height: 100%;
+      background: #4a9eff;
+      transition: width 0.15s ease;
+    }
+    #status {
+      font-size: 0.85rem;
+      color: #8b949e;
+      text-align: center;
     }
   </style>
 </head>
 <body>
   <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+
+  <div id="loading">
+    <div class="loading-title">chi-tea-aye</div>
+    <div class="progress-track">
+      <div id="progress-bar" class="progress-bar"></div>
+    </div>
+    <div id="status">Loading game assets...</div>
+  </div>
+
+  <script>
+    var statusElement = document.getElementById('status');
+    var progressBar = document.getElementById('progress-bar');
+    var loadingOverlay = document.getElementById('loading');
+
+    var Module = {
+      canvas: (function() {
+        var canvas = document.getElementById('canvas');
+        return canvas;
+      })(),
+      setStatus: function(text) {
+        if (!text) {
+          if (loadingOverlay) {
+            loadingOverlay.classList.add('hidden');
+            setTimeout(function() { loadingOverlay.style.display = 'none'; }, 350);
+          }
+          return;
+        }
+        if (statusElement) statusElement.textContent = text;
+        var m = text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
+        if (m && progressBar) {
+          var current = parseFloat(m[2]);
+          var total = parseFloat(m[4]);
+          progressBar.style.width = Math.min(100, Math.round((current / total) * 100)) + '%';
+        }
+      },
+      totalDependencies: 0,
+      monitorRunDependencies: function(left) {
+        this.totalDependencies = Math.max(this.totalDependencies, left);
+        if (left) {
+          Module.setStatus('Preparing assets... (' + (this.totalDependencies - left) + '/' + this.totalDependencies + ')');
+        } else {
+          Module.setStatus('');
+        }
+      }
+    };
+
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('./sw.js').then(function(reg) {
+          console.log('PWA ServiceWorker registered with scope:', reg.scope);
+        }).catch(function(err) {
+          console.log('PWA ServiceWorker registration failed:', err);
+        });
+      });
+    }
+  </script>
   {{{ SCRIPT }}}
 </body>
 </html>

@@ -40,7 +40,7 @@ Gameplay video screencast:
 
 The warrior model is `assets/characters/african_warrior.glb`, and the weapon props are
 `assets/models/rifle.glb` and `assets/models/pistol.glb`. They are loaded from the working
-directory on desktop, bundled into the web build, and packaged as assets on Android.
+directory on desktop and bundled into the web build.
 
 ## Build
 
@@ -58,7 +58,7 @@ cmake --build build
 ./build/chi-tea-aye
 ```
 
-Web (requires Emscripten; output goes to `build-web/`):
+Web / Mobile PWA (requires Emscripten; output goes to `build-web/`):
 
 ```sh
 emcmake cmake -S . -B build-web
@@ -66,12 +66,7 @@ cmake --build build-web
 python3 -m http.server --directory build-web 8000
 ```
 
-Android (requires the Android SDK and NDK; the project pins NDK 29):
-
-```sh
-cd android
-./gradlew assembleDebug
-```
+Open `http://localhost:8000` (or `http://<your-ip>:8000` on a mobile device on the same local network). On mobile browsers (Chrome on Android, Safari on iOS), the game can be installed to the home screen as a standalone fullscreen Progressive Web App (PWA). Touch controls are built-in: drag the left half of the screen to move, and drag the right half to orbit.
 
 Linux desktop builds need OpenGL development headers and the usual SDL3 build dependencies (see `external/SDL/docs`).
 

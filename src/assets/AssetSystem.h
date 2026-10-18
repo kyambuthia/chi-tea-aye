@@ -8,8 +8,7 @@ namespace assets {
 class AssetSystem {
 public:
     // Loads every asset the game needs. Paths are relative to the working
-    // directory on desktop, the preloaded virtual filesystem on web, and the
-    // APK assets folder on Android.
+    // directory on desktop and the preloaded virtual filesystem on web.
     bool init();
     void cleanup();
 

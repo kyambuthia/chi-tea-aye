@@ -6,8 +6,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# GLES 3 on web and Android; desktop uses GL 3.3 core.
-if(EMSCRIPTEN OR ANDROID)
+# GLES 3 on web; desktop uses GL 3.3 core.
+if(EMSCRIPTEN)
     set(CHI_GLES ON)
 else()
     set(CHI_GLES OFF)
@@ -20,14 +20,8 @@ if(EMSCRIPTEN)
     target_compile_options(chi-sdl3 INTERFACE -sUSE_SDL=3)
     target_link_options(chi-sdl3 INTERFACE -sUSE_SDL=3 -sUSE_WEBGL2=1 -sALLOW_MEMORY_GROWTH=1)
 else()
-    # Android loads SDL3 as a shared library through SDLActivity; desktop links it statically.
-    if(ANDROID)
-        set(SDL_SHARED ON CACHE BOOL "" FORCE)
-        set(SDL_STATIC OFF CACHE BOOL "" FORCE)
-    else()
-        set(SDL_SHARED OFF CACHE BOOL "" FORCE)
-        set(SDL_STATIC ON CACHE BOOL "" FORCE)
-    endif()
+    set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+    set(SDL_STATIC ON CACHE BOOL "" FORCE)
     set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
     add_subdirectory(external/SDL)
 endif()
@@ -81,15 +75,8 @@ set(CHI_SOURCES
     src/debug/DebugUi.cpp
 )
 
-# SDLActivity loads a shared library named "main", so Android builds a library
-# under that name; every other platform builds an executable.
-if(ANDROID)
-    set(CHI_APP_TARGET main)
-    add_library(${CHI_APP_TARGET} SHARED ${CHI_SOURCES})
-else()
-    set(CHI_APP_TARGET chi-tea-aye)
-    add_executable(${CHI_APP_TARGET} ${CHI_SOURCES})
-endif()
+set(CHI_APP_TARGET chi-tea-aye)
+add_executable(${CHI_APP_TARGET} ${CHI_SOURCES})
 
 target_include_directories(${CHI_APP_TARGET} PRIVATE
     src
@@ -110,15 +97,33 @@ target_link_libraries(${CHI_APP_TARGET} PRIVATE chi-character imgui SDL3::SDL3)
 
 if(EMSCRIPTEN)
     # Emscripten emits an HTML shell alongside the JS and WASM.
-    set_target_properties(${CHI_APP_TARGET} PROPERTIES SUFFIX ".html")
+    set_target_properties(${CHI_APP_TARGET} PROPERTIES OUTPUT_NAME "index" SUFFIX ".html")
     target_link_options(${CHI_APP_TARGET} PRIVATE --shell-file ${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html)
     # Bundle the assets into the virtual filesystem at the same relative paths the game loads.
     target_link_options(${CHI_APP_TARGET} PRIVATE --preload-file ${CMAKE_CURRENT_SOURCE_DIR}/assets@/assets)
+
+    # Copy PWA assets to the build output directory
+    add_custom_command(TARGET ${CHI_APP_TARGET} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_CURRENT_SOURCE_DIR}/web/manifest.webmanifest
+            $<TARGET_FILE_DIR:${CHI_APP_TARGET}>/manifest.webmanifest
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_CURRENT_SOURCE_DIR}/web/sw.js
+            $<TARGET_FILE_DIR:${CHI_APP_TARGET}>/sw.js
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_CURRENT_SOURCE_DIR}/web/icon-192.png
+            $<TARGET_FILE_DIR:${CHI_APP_TARGET}>/icon-192.png
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_CURRENT_SOURCE_DIR}/web/icon-512.png
+            $<TARGET_FILE_DIR:${CHI_APP_TARGET}>/icon-512.png
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE_DIR:${CHI_APP_TARGET}>/index.html
+            $<TARGET_FILE_DIR:${CHI_APP_TARGET}>/chi-tea-aye.html
+        COMMENT "Copying PWA web assets to output directory"
+    )
 endif()
 
-if(ANDROID)
-    target_link_libraries(${CHI_APP_TARGET} PRIVATE GLESv3 log)
-elseif(NOT CHI_GLES)
+if(NOT CHI_GLES)
     # Desktop: GL 1.0 entry points come from the system GL library; newer ones are
     # loaded at runtime (see src/renderer/GlFunctions.cpp).
     find_package(OpenGL REQUIRED)
@@ -133,7 +138,7 @@ target_link_libraries(locomotion_preprocess PRIVATE chi-character chi-locomotion
 
 # Unit-style checks, built and run from the repository root.
 option(CHI_BUILD_TESTS "Build the character and terrain checks" ON)
-if(CHI_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
+if(CHI_BUILD_TESTS AND NOT EMSCRIPTEN)
     add_executable(clip_check tests/clip_check.cpp)
     target_link_libraries(clip_check PRIVATE chi-character)
     add_executable(foot_contact_check tests/foot_contact_check.cpp)
