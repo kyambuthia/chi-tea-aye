@@ -15,6 +15,10 @@ set(JPH_USE_DX12 OFF CACHE BOOL "" FORCE)
 set(JPH_USE_VK OFF CACHE BOOL "" FORCE)
 set(JPH_USE_MTL OFF CACHE BOOL "" FORCE)
 set(JPH_USE_CPU_COMPUTE OFF CACHE BOOL "" FORCE)
+# Use Jolt's SSE2 baseline on x86 so the desktop build runs on older CPUs too.
+foreach(feature SSE4_1 SSE4_2 AVX AVX2 AVX512 LZCNT TZCNT F16C FMADD)
+    set(USE_${feature} OFF CACHE BOOL "" FORCE)
+endforeach()
 FetchContent_Declare(JoltPhysics
     GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
     GIT_TAG v5.6.0
@@ -78,7 +82,7 @@ add_library(chi-sim STATIC
     src/physics/Vehicle.cpp
 )
 target_include_directories(chi-sim PUBLIC src)
-target_link_libraries(chi-sim PUBLIC chi-world Jolt)
+target_link_libraries(chi-sim PUBLIC chi-world chi-character Jolt)
 
 set(IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/imgui")
 add_library(imgui STATIC
@@ -137,6 +141,9 @@ target_link_libraries(${CHI_APP_TARGET} PRIVATE chi-sim chi-character imgui SDL3
 if(EMSCRIPTEN)
     # Emscripten emits an HTML shell alongside the JS and WASM.
     set_target_properties(${CHI_APP_TARGET} PROPERTIES OUTPUT_NAME "index" SUFFIX ".html")
+    # Match Jolt 5.6's Emscripten examples: physics needs more than the 64 KiB default.
+    # Keep a stack cookie so a future overflow fails clearly instead of corrupting input state.
+    target_link_options(${CHI_APP_TARGET} PRIVATE -sSTACK_SIZE=1048576 -sSTACK_OVERFLOW_CHECK=1)
     target_link_options(${CHI_APP_TARGET} PRIVATE --shell-file ${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html)
     # Relink when the page shell changes, not only when the code does.
     set_property(TARGET ${CHI_APP_TARGET} APPEND PROPERTY LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html)
@@ -196,6 +203,8 @@ if(CHI_BUILD_TESTS AND NOT EMSCRIPTEN)
     target_link_libraries(clip_direction_check PRIVATE chi-character)
     add_executable(movement_check tests/movement_check.cpp)
     target_link_libraries(movement_check PRIVATE chi-sim)
+    add_executable(ragdoll_check tests/ragdoll_check.cpp)
+    target_link_libraries(ragdoll_check PRIVATE chi-sim)
     add_executable(target_check tests/target_check.cpp)
     target_link_libraries(target_check PRIVATE chi-sim)
     add_executable(wheel_check tests/wheel_check.cpp src/ui/WeaponWheel.cpp)

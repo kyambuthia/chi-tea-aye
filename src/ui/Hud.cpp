@@ -177,7 +177,9 @@ void Hud::draw(const gameplay::GameState& gameplay, const world::World& world, c
         std::snprintf(text, sizeof(text), "Press %s to get in", use_key);
         drawPrompt(draw, text);
     } else if (context.show_capture_hint) {
-        drawPrompt(draw, "Click to look around  -  Esc frees the mouse");
+        drawPrompt(draw, "Click to look around  -  Esc frees the mouse\nR resets the warrior ragdoll");
+    } else if (!context.touch && !context.gamepad && gameplay.warriorRagdollActive()) {
+        drawPrompt(draw, "R resets the warrior ragdoll");
     }
 
     if (context.touch) {

@@ -1,7 +1,9 @@
 #pragma once
 
+#include "assets/CharacterModel.h"
 #include "gameplay/Targets.h"
 #include "gameplay/WeaponState.h"
+#include "math/Mat4.h"
 #include "physics/Vehicle.h"
 
 #include <vector>
@@ -26,6 +28,11 @@ public:
     void update(const app::InputState& input, physics::Physics& physics, const world::World& world, float delta_time);
     void cleanup();
 
+    // The warrior is an independent NPC. R respawns its ragdoll at the practice spot.
+    bool spawnWarrior(physics::Physics& physics, const world::World& world, const assets::CharacterModel& character);
+    bool warriorRagdollActive() const { return warrior_ragdoll_active_; }
+    const math::Mat4* warriorSkinPose() const { return warrior_ragdoll_active_ ? warrior_pose_ : nullptr; }
+
     // Puts the shooting targets on the terrain. Call once the world is set up.
     void placeTargets(const world::World& world);
     // Parks a car at each of the city's parking spots.
@@ -34,7 +41,7 @@ public:
     // Off: the camera keeps the angle the player left it at, for inspecting the model.
     void setAutoRecenter(bool enabled);
 
-    // Moves the warrior (on foot) to a ground position and heading, at rest.
+    // Moves the player (on foot) to a ground position and heading, at rest.
     void setPlayerPosition(float x, float z, float yaw);
 
     float playerX() const;
@@ -132,6 +139,9 @@ private:
     float yaw_ = 0.0f;
     float clip_time_ = 0.0f;
     bool crouched_ = false;
+    const assets::CharacterModel* warrior_character_ = nullptr;
+    bool warrior_ragdoll_active_ = false;
+    math::Mat4 warrior_pose_[assets::kMaxJoints]{};
     bool inspecting_ = false;  // F3: the close camera for checking the model
     float fire_buffer_ = 0.0f;  // seconds a press stays ready for the next shot
     float recoil_kick_ = 0.0f;  // radians the camera is kicked up, decaying after each shot

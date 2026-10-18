@@ -30,6 +30,48 @@ EM_JS(double, chi_page_option, (const char* name), {
     var v = new URLSearchParams(window.location.search).get(UTF8ToString(name));
     return v === null || isNaN(parseFloat(v)) ? -1 : parseFloat(v);
 });
+// SDL 3.2's web backend marks relative mode enabled before pointer lock succeeds,
+// and does not catch promise rejections. Let the browser own capture on web;
+// SDL still delivers movementX/Y as relative motion while the canvas is locked.
+EM_JS(void, chi_set_pointer_captured, (int captured), {
+    var canvas = Module['canvas'];
+    var state = Module['chiPointerCapture'] || (Module['chiPointerCapture'] = {pending: false, wanted: false});
+    state.wanted = !!captured;
+    if (!captured) {
+        if (document.pointerLockElement === canvas) document.exitPointerLock();
+        return;
+    }
+    if (state.pending || document.pointerLockElement === canvas) return;
+    if (!canvas.isConnected || !document.hasFocus() || !canvas.requestPointerLock) {
+        state.wanted = false;
+        return;
+    }
+    state.pending = true;
+    var done = false;
+    var finish = function() {
+        if (done) return;
+        done = true;
+        state.pending = false;
+        document.removeEventListener('pointerlockchange', finish);
+        document.removeEventListener('pointerlockerror', finish);
+        // A focus loss or Escape may cancel a request before it completes.
+        if (!state.wanted && document.pointerLockElement === canvas) document.exitPointerLock();
+    };
+    document.addEventListener('pointerlockchange', finish);
+    document.addEventListener('pointerlockerror', finish);
+    try {
+        var request = canvas.requestPointerLock();
+        // Older browsers report completion only through the events above.
+        if (request && request.catch) request.catch(finish);
+    } catch (error) {
+        finish();
+    }
+});
+EM_JS(int, chi_pointer_captured, (), {
+    var state = Module['chiPointerCapture'];
+    // Stop consuming look input immediately when releasing an asynchronous lock.
+    return !!(state && state.wanted && document.pointerLockElement === Module['canvas']);
+});
 // Publishes the game's numbers on window.chiStats for browser tests and remote debugging.
 EM_JS(void, chi_publish_stats, (double fps, double scale, int width, int height, int samples, int visible, int total,
     int driving, double speed, double x, double z, int offscreen, int reach, double car_distance), {
@@ -102,9 +144,17 @@ public:
         if (!assets_.init()) {
             return SDL_APP_FAILURE;
         }
+        if (assets_.ybot() == nullptr) {
+            SDL_Log("failed to load the Y-Bot player");
+            return SDL_APP_FAILURE;
+        }
         world_.init();
-        physics_.init();
+        physics_.init(world_);
         gameplay_.init();
+        if (!gameplay_.spawnWarrior(physics_, world_, assets_.character())) {
+            SDL_Log("failed to create warrior NPC ragdoll");
+            return SDL_APP_FAILURE;
+        }
         if (world_.cityEnabled()) gameplay_.placeTargets(world_);
         gameplay_.spawnVehicles(world_);
         renderer_.init(assets_.character(), assets_.ybot(), world_, assets_.rifle(), assets_.pistol());
@@ -123,6 +173,12 @@ public:
         last_ticks_ns_ = now_ns;
 
         ++frame_count_;
+        const bool captured = pointerCaptured();
+        if (was_pointer_captured_ && !captured) {
+            releaseHeldInput();
+            input_.look_dx = input_.look_dy = 0.0f;
+        }
+        was_pointer_captured_ = captured;
         pollGamepad(dt);
         combineAnalogInput();
         debug_ui_.setMouseEnabled(!pointerCaptured());
@@ -138,6 +194,7 @@ public:
         input_.fire_pressed = false;
         input_.crouch_pressed = false;
         input_.inspect_pressed = false;
+        input_.ragdoll_pressed = false;
         input_.use_pressed = false;
         input_.tapped = app::KeyState{};
 
@@ -396,6 +453,7 @@ private:
                 case SDL_SCANCODE_3: input_.weapon_request = 2; break;
                 case SDL_SCANCODE_F: input_.use_pressed = true; break;  // car in reach: get in; otherwise punch
                 case SDL_SCANCODE_E: input_.use_pressed = true; break;
+                case SDL_SCANCODE_R: input_.ragdoll_pressed = true; break;
                 case SDL_SCANCODE_C: input_.crouch_pressed = true; break;
                 case SDL_SCANCODE_W: input_.tapped.w = true; break;
                 case SDL_SCANCODE_A: input_.tapped.a = true; break;
@@ -417,20 +475,20 @@ private:
             if (key.scancode == SDL_SCANCODE_F1) {
                 renderer_.styleSettings().show_skeleton = !renderer_.styleSettings().show_skeleton;
             }
-            if (key.scancode == SDL_SCANCODE_F4) {
-                renderer_.styleSettings().character_model = 1 - renderer_.styleSettings().character_model;
-            }
         }
         if (key.scancode == SDL_SCANCODE_ESCAPE && down) {
             // Esc frees a captured mouse first. On desktop a second Esc quits; a web page
             // never quits itself (the tab would be left with a dead canvas).
+#if defined(__EMSCRIPTEN__)
+            // Also cancel a browser request which has not completed yet.
+            setPointerCaptured(false);
+#else
             if (pointerCaptured()) {
                 setPointerCaptured(false);
             } else {
-#if !defined(__EMSCRIPTEN__)
                 return SDL_APP_SUCCESS;
-#endif
             }
+#endif
         }
         if (!down || !debug_ui_.wantsKeyboard()) {
             setKey(key.scancode, down);
@@ -440,28 +498,28 @@ private:
 
     // The mouse is captured (pointer lock on web, relative mode on desktop).
     bool pointerCaptured() const {
-        if (window_ == nullptr || !SDL_GetWindowRelativeMouseMode(window_)) {
-            return false;
-        }
+        if (window_ == nullptr) return false;
 #if defined(__EMSCRIPTEN__)
         // The browser drops pointer lock on Esc without telling the game's key handler.
-        EmscriptenPointerlockChangeEvent status{};
-        if (emscripten_get_pointerlock_status(&status) == EMSCRIPTEN_RESULT_SUCCESS) {
-            return status.isActive;
-        }
-        return false;
+        return chi_pointer_captured() != 0;
 #else
-        return true;
+        return SDL_GetWindowRelativeMouseMode(window_);
 #endif
     }
 
     void setPointerCaptured(bool captured) {
+#if defined(__EMSCRIPTEN__)
+        chi_set_pointer_captured(captured);
+#else
         if (window_ != nullptr) {
             SDL_SetWindowRelativeMouseMode(window_, captured);
         }
+#endif
         if (!captured) {
             mouse_fire_ = false;
             mouse_aim_ = false;
+            input_.orbit_drag = false;
+            input_.look_dx = input_.look_dy = 0.0f;
         }
     }
 
@@ -866,6 +924,7 @@ private:
     bool touch_aim_ = false;
     bool touch_handbrake_ = false;
     // Held buttons by device; combineAnalogInput merges them into the input state.
+    bool was_pointer_captured_ = false;
     bool mouse_fire_ = false;
     bool mouse_aim_ = false;
     bool space_held_ = false;

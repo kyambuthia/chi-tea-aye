@@ -29,6 +29,7 @@ struct InputState {
     bool fire_pressed = false;
     bool crouch_pressed = false;
     bool inspect_pressed = false;  // F3: toggles the close inspection camera
+    bool ragdoll_pressed = false; // R: respawn the warrior NPC ragdoll
     // F or gamepad Y: get into the nearest car, or out of the current one. On foot
     // with no car in reach, F punches instead.
     bool use_pressed = false;

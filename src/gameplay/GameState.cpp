@@ -1,7 +1,9 @@
 #include "gameplay/GameState.h"
 
 #include "app/InputState.h"
+#include "assets/CharacterModel.h"
 #include "math/Geometry.h"
+#include "math/Mat4.h"
 #include "physics/Physics.h"
 #include "world/World.h"
 
@@ -145,8 +147,30 @@ float approach(float current, float target, float factor) {
 
 void GameState::init() {}
 
+bool GameState::spawnWarrior(physics::Physics& physics, const world::World& world,
+    const assets::CharacterModel& character) {
+    warrior_character_ = &character;
+    const math::Mat4 root = math::multiply(world.groundFrame(2.0f, 3.5f),
+        math::rotationY(kPi - character.frontYaw()));
+    assets::CharacterModel::PoseRequest request;
+    character.evaluatePose(request, root,
+        [&world](float x, float z) { return world.groundHeight(x, z); }, warrior_pose_);
+    warrior_ragdoll_active_ = physics.startRagdoll(character, warrior_pose_);
+    if (warrior_ragdoll_active_) {
+        warrior_ragdoll_active_ = physics.ragdollSkinPose(warrior_pose_);
+    }
+    return warrior_ragdoll_active_;
+}
+
 void GameState::update(const app::InputState& input, physics::Physics& physics, const world::World& world, float delta_time) {
     world_ = &world;
+    if (input.ragdoll_pressed && warrior_character_ != nullptr) {
+        spawnWarrior(physics, world, *warrior_character_);
+    }
+    if (warrior_ragdoll_active_) {
+        physics.updateRagdoll(delta_time);
+        warrior_ragdoll_active_ = physics.ragdollSkinPose(warrior_pose_);
+    }
     // Orbit input moves the camera's goal directly. The camera does not follow
     // the warrior's heading while it moves, or the view would chase the turn
     // and spin: the input is read against the view, which turns the warrior.
@@ -671,7 +695,10 @@ void GameState::renderCameraView(float eye[3], float look[3]) const {
     }
 }
 
-void GameState::cleanup() {}
+void GameState::cleanup() {
+    warrior_character_ = nullptr;
+    warrior_ragdoll_active_ = false;
+}
 
 void GameState::placeTargets(const world::World& world) {
     world_ = &world;

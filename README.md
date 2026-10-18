@@ -26,19 +26,21 @@ Gameplay video screencast:
 ## Controls
 
 - WASD: move. Hold Shift to run.
-- Mouse: hold the middle button and drag to orbit the camera; scroll to zoom. Left button fires (hold for automatic fire). Right button aims.
+- Mouse: click the scene to capture the pointer, then move it to look around. Esc releases it. Middle-button drag also orbits without capture; scroll to zoom. Once captured, the left button fires (hold for automatic fire) and the right button aims.
 - Touch: drag the left half of the screen to move; drag the right half to orbit.
 - Weapons: 1 rifle, 2 pistol, 3 fists. Three gun props float in an arc above the player's head.
 - Fists: F to punch.
 - Rifle: hold the right mouse button to aim from over the right shoulder. The third-person view stays zoomed out, with an X reticle and centre dot visible.
-- Rifle fire: left button or Space fires, about eight rounds a second while held. Each rifle prop emits a short expanding fireball with a hot core and uneven flame edge; the shot path stays clear. Hits flash an X marker over the reticle. The reticle stays to the player's right, and shots go where it points. The warrior turns to face the camera while aiming or firing.
-- Crouch: C toggles crouching. Crouched, the warrior walks slower and the view drops.
+- Rifle fire: left button or Space fires, about eight rounds a second while held. Each rifle prop emits a short expanding fireball with a hot core and uneven flame edge; the shot path stays clear. Hits flash an X marker over the reticle. The reticle stays to the player's right, and shots go where it points. The player turns to face the camera while aiming or firing.
+- Crouch: C toggles crouching. Crouched, the player walks slower and the view drops.
 - Weapon wheel: hold Q, point at a sector (rifle top, pistol right, fists bottom or left), and release Q to pick it. Releasing in the centre picks nothing.
 - The playable scene is open terrain with a ground grid; the city, parked cars, walls, and target range are absent.
-- Camera: auto-recenter is off by default, so the camera keeps the angle you set. Turn it on in the dev panel to return to behind the warrior after orbiting.
+- Camera: auto-recenter is off by default, so the camera keeps the angle you set. Turn it on in the dev panel to return to behind the player after orbiting.
 - F1: toggle the skeleton overlay (joints and bones), which also shows the current clip.
+- R: reset the warrior NPC ragdoll beside the Y-Bot player. The warrior starts in ragdoll mode and falls under gravity; player movement and the camera stay independent.
 
-The warrior model is `assets/characters/african_warrior.glb`. Rifle and pistol props use
+The Y-Bot player uses `assets/characters/y_bot.glb`; the warrior NPC uses
+`assets/characters/african_warrior.glb`. Rifle and pistol props use
 `assets/models/rifle.glb` and `assets/models/pistol.glb`; the shotgun prop is built from
 geometry at runtime. The GLB files load from the working directory on desktop and are
 bundled into the web build.

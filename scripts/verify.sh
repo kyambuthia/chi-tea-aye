@@ -25,7 +25,7 @@ if [ "${1:-}" != "--no-web" ]; then
 fi
 
 step "checks"
-checks="movement_check weapon_state_check weapon_attachment_check hand_ik_check foot_contact_check clip_check clip_direction_check target_check wheel_check world_check vehicle_check render_math_check hud_check"
+checks="movement_check ragdoll_check weapon_state_check weapon_attachment_check hand_ik_check foot_contact_check clip_check clip_direction_check target_check wheel_check world_check vehicle_check render_math_check hud_check"
 for t in $checks; do
     out=$(./build/$t 2>&1); rc=$?
     if [ $rc -eq 0 ]; then printf '  %-24s ok    %s\n' "$t" "$(echo "$out" | tail -1)"

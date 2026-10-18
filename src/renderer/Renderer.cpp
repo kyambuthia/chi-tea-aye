@@ -692,7 +692,7 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
     glBindVertexArray(impl_->ground.vao);
     glDrawElements(GL_TRIANGLES, impl_->ground.index_count, GL_UNSIGNED_SHORT, nullptr);
 
-    const bool use_ybot = (impl_->style.character_model == 1) && (impl_->ybot != nullptr);
+    const bool use_ybot = impl_->ybot != nullptr;
     const assets::CharacterModel* active_char = use_ybot ? impl_->ybot : impl_->character;
     const GpuMesh& active_mesh = use_ybot ? impl_->ybot_mesh : impl_->warrior;
     const GLuint active_texture = use_ybot ? impl_->ybot_texture : impl_->warrior_texture;
@@ -808,30 +808,15 @@ void Renderer::draw(const gameplay::GameState& gameplay, int framebuffer_width, 
         glDrawElements(GL_TRIANGLES, active_mesh.index_count, GL_UNSIGNED_SHORT, nullptr);
     }
 
-    // Companion character in the scene: the other character stands near the practice range.
-    if (impl_->style.show_companion) {
-        const assets::CharacterModel* comp_char = use_ybot ? impl_->character : impl_->ybot;
-        const GpuMesh& comp_mesh = use_ybot ? impl_->warrior : impl_->ybot_mesh;
-        const GLuint comp_texture = use_ybot ? impl_->warrior_texture : impl_->ybot_texture;
-        if (comp_char != nullptr && comp_mesh.index_count > 0) {
-            const float comp_x = 2.0f;
-            const float comp_z = 3.5f;
-            const Mat4 comp_root = math::multiply(impl_->world->groundFrame(comp_x, comp_z),
-                math::rotationY(3.14159f - comp_char->frontYaw()));
-            Mat4 comp_joints[kJoints]{};
-            assets::CharacterModel::PoseRequest comp_req;
-            comp_req.clip = "Idle";
-            comp_req.time = impl_->anim_time;
-            comp_char->evaluatePose(comp_req, comp_root, impl_->ground_height, comp_joints);
-
-            glUniformMatrix4fv(impl_->toon_joints, kJoints, GL_FALSE, comp_joints[0].m);
-            glUniformMatrix4fv(impl_->toon_mvp, 1, GL_FALSE, view_projection.m);
-            glUniformMatrix4fv(impl_->toon_model, 1, GL_FALSE, model.m);
-            setToonSurface(false);
-            glBindTexture(GL_TEXTURE_2D, comp_texture);
-            glBindVertexArray(comp_mesh.vao);
-            glDrawElements(GL_TRIANGLES, comp_mesh.index_count, GL_UNSIGNED_SHORT, nullptr);
-        }
+    // The warrior NPC is posed by physics, independently of the Y-Bot player.
+    if (gameplay.warriorSkinPose() != nullptr && impl_->warrior.index_count > 0) {
+        glUniformMatrix4fv(impl_->toon_joints, kJoints, GL_FALSE, gameplay.warriorSkinPose()[0].m);
+        glUniformMatrix4fv(impl_->toon_mvp, 1, GL_FALSE, view_projection.m);
+        glUniformMatrix4fv(impl_->toon_model, 1, GL_FALSE, model.m);
+        setToonSurface(false);
+        glBindTexture(GL_TEXTURE_2D, impl_->warrior_texture);
+        glBindVertexArray(impl_->warrior.vao);
+        glDrawElements(GL_TRIANGLES, impl_->warrior.index_count, GL_UNSIGNED_SHORT, nullptr);
     }
 
     // Three copies of the loaded rifle float in a shallow arc and fire together.

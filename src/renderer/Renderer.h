@@ -28,9 +28,6 @@ struct StyleSettings {
     bool dynamic_resolution = true;
     float fixed_scale = 1.0f;
     int msaa_samples = 4;
-    // Character selection: 0 = African Warrior, 1 = Y-Bot (F4).
-    int character_model = 1;
-    bool show_companion = true;
     float toon_bands = 4.0f;
     bool halftone_enabled = true;
     float halftone_intensity = 0.12f;
