@@ -4,6 +4,17 @@ Minimal C++20 SDL3 game prototype.
 
 `chi-tea-aye` is the repository codename, not necessarily the final game title.
 
+## Preview
+
+![Gameplay Preview](docs/media/gameplay-preview.gif)
+
+Gameplay video screencast:
+- [docs/media/gameplay-screencast.mp4](docs/media/gameplay-screencast.mp4)
+
+![Gameplay Overview](docs/media/gameplay-overview.webp)
+
+![Gameplay Character](docs/media/gameplay-character.webp)
+
 ## First Milestone
 
 - SDL3 window and main loop.
