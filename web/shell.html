@@ -38,12 +38,14 @@
       display: block;
       width: 100vw;
       height: 100vh;
+      /* dvh follows the visible area on mobile browsers with collapsing toolbars. */
+      height: 100dvh;
       outline: none;
       position: absolute;
       top: 0;
       left: 0;
     }
-    #loading {
+    .overlay {
       position: absolute;
       top: 0;
       left: 0;
@@ -57,10 +59,28 @@
       z-index: 10;
       pointer-events: none;
       transition: opacity 0.3s ease;
+      padding: 0 16px;
+      text-align: center;
     }
-    #loading.hidden {
+    .overlay.hidden {
       opacity: 0;
       pointer-events: none;
+    }
+    #fault {
+      display: none;
+      pointer-events: auto;
+      background-color: rgba(20, 23, 28, 0.94);
+      z-index: 20;
+    }
+    #fault button {
+      margin-top: 1rem;
+      font: inherit;
+      padding: 0.5rem 1.2rem;
+      border-radius: 6px;
+      border: 1px solid #3a404c;
+      background: #232730;
+      color: #f0f0f0;
+      cursor: pointer;
     }
     .loading-title {
       font-size: 1.5rem;
@@ -83,17 +103,17 @@
       background: #4a9eff;
       transition: width 0.15s ease;
     }
-    #status {
+    #status, #fault-text {
       font-size: 0.85rem;
       color: #8b949e;
-      text-align: center;
+      max-width: 36rem;
     }
   </style>
 </head>
 <body>
-  <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+  <canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
 
-  <div id="loading">
+  <div id="loading" class="overlay">
     <div class="loading-title">chi-tea-aye</div>
     <div class="progress-track">
       <div id="progress-bar" class="progress-bar"></div>
@@ -101,16 +121,48 @@
     <div id="status">Loading game assets...</div>
   </div>
 
+  <div id="fault" class="overlay">
+    <div class="loading-title" id="fault-title">Something went wrong</div>
+    <div id="fault-text"></div>
+    <button type="button" onclick="location.reload()">Reload</button>
+  </div>
+
   <script>
     var statusElement = document.getElementById('status');
     var progressBar = document.getElementById('progress-bar');
     var loadingOverlay = document.getElementById('loading');
+    var canvasElement = document.getElementById('canvas');
+
+    // One place to show a fatal problem, with a reload button, instead of a frozen canvas.
+    function showFault(title, text) {
+      document.getElementById('fault-title').textContent = title;
+      document.getElementById('fault-text').textContent = text || '';
+      document.getElementById('fault').style.display = 'flex';
+      if (loadingOverlay) loadingOverlay.style.display = 'none';
+    }
+
+    // The game needs WebGL 2 (every current browser has it, including Safari 15 and later).
+    var hasWebGL2 = (function() {
+      try {
+        return !!document.createElement('canvas').getContext('webgl2');
+      } catch (e) {
+        return false;
+      }
+    })();
+
+    // A lost context (GPU reset, driver update, too many tabs) would leave a frozen
+    // canvas. Cancelling the default tells the browser we will recover; recovery here
+    // is a reload, which rebuilds every GL resource from scratch.
+    canvasElement.addEventListener('webglcontextlost', function(e) {
+      e.preventDefault();
+      showFault('Graphics were reset', 'The browser reset the GPU. The game will reload when graphics come back.');
+    }, false);
+    canvasElement.addEventListener('webglcontextrestored', function() {
+      location.reload();
+    }, false);
 
     var Module = {
-      canvas: (function() {
-        var canvas = document.getElementById('canvas');
-        return canvas;
-      })(),
+      canvas: canvasElement,
       setStatus: function(text) {
         if (!text) {
           if (loadingOverlay) {
@@ -135,14 +187,24 @@
         } else {
           Module.setStatus('');
         }
+      },
+      onAbort: function(what) {
+        // Keep the first, more specific message (no WebGL 2, lost context).
+        if (document.getElementById('fault').style.display === 'flex') return;
+        showFault('The game stopped', String(what || 'An unexpected error stopped the game.'));
       }
     };
 
+    if (!hasWebGL2) {
+      showFault('WebGL 2 is not available', 'This browser or device cannot run the game. Try an up-to-date Chrome, Edge, Firefox or Safari, and check that hardware acceleration is on.');
+    }
+
+    // Keyboard focus follows the canvas, so keys reach the game after any click.
+    canvasElement.addEventListener('pointerdown', function() { canvasElement.focus(); });
+
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function() {
-        navigator.serviceWorker.register('./sw.js').then(function(reg) {
-          console.log('PWA ServiceWorker registered with scope:', reg.scope);
-        }).catch(function(err) {
+        navigator.serviceWorker.register('./sw.js').catch(function(err) {
           console.log('PWA ServiceWorker registration failed:', err);
         });
       });
