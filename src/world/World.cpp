@@ -33,16 +33,18 @@ float smoothstep(float edge0, float edge1, float x) {
 
 } // namespace
 
-World::World() {
-    city_.generate(kCitySeed);
-    for (const Box& wall : kPracticeWalls) {
-        solids_.push_back(wall);
-        styles_.push_back({{kWallColor[0], kWallColor[1], kWallColor[2]}, 0.0f, false});
-    }
-    practice_walls_ = static_cast<int>(solids_.size());
-    for (const Building& b : city_.buildings()) {
-        solids_.push_back(b.box);
-        styles_.push_back({{b.color[0], b.color[1], b.color[2]}, b.seed, true});
+World::World(bool city_enabled) : city_enabled_(city_enabled) {
+    if (city_enabled_) {
+        city_.generate(kCitySeed);
+        for (const Box& wall : kPracticeWalls) {
+            solids_.push_back(wall);
+            styles_.push_back({{kWallColor[0], kWallColor[1], kWallColor[2]}, 0.0f, false});
+        }
+        practice_walls_ = static_cast<int>(solids_.size());
+        for (const Building& b : city_.buildings()) {
+            solids_.push_back(b.box);
+            styles_.push_back({{b.color[0], b.color[1], b.color[2]}, b.seed, true});
+        }
     }
     grid_.build(solids_, kCityHalfSize, kGridCell);
 }

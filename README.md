@@ -28,19 +28,20 @@ Gameplay video screencast:
 - WASD: move. Hold Shift to run.
 - Mouse: hold the middle button and drag to orbit the camera; scroll to zoom. Left button fires (hold for automatic fire). Right button aims.
 - Touch: drag the left half of the screen to move; drag the right half to orbit.
-- Weapons: 1 rifle, 2 pistol, 3 fists. Switching lowers the old weapon and raises the new one.
+- Weapons: 1 rifle, 2 pistol, 3 fists. Three gun props float in an arc above the player's head.
 - Fists: F to punch.
-- Rifle: hold the right mouse button to aim down the scope (the view narrows and the scope overlay appears).
-- Rifle fire: left button or Space fires, about eight rounds a second while held. A crosshair sits at the centre of the view, and the shot goes where it points. A shot shows a muzzle flash, a tracer, an impact spark, and a hit marker when it hits a target. The warrior turns to face the camera while aiming or firing.
-- Crouch: C toggles crouching. Crouched, the warrior walks slower and the view drops. Stand up to shoot over the low wall.
+- Rifle: hold the right mouse button to aim from over the right shoulder. The third-person view stays zoomed out, with an X reticle and centre dot visible.
+- Rifle fire: left button or Space fires, about eight rounds a second while held. Each rifle prop emits a short expanding fireball with a hot core and uneven flame edge; the shot path stays clear. Hits flash an X marker over the reticle. The reticle stays to the player's right, and shots go where it points. The warrior turns to face the camera while aiming or firing.
+- Crouch: C toggles crouching. Crouched, the warrior walks slower and the view drops.
 - Weapon wheel: hold Q, point at a sector (rifle top, pistol right, fists bottom or left), and release Q to pick it. Releasing in the centre picks nothing.
-- Target practice: six pop-up targets stand in front of the start point. Shots go to the centre of the view, so line up a target with the crosshair (orbit the camera, or hold the right button to aim down the scope). Knocked-down targets stand again after three seconds. The dev panel counts hits and shots.
+- The playable scene is open terrain with a ground grid; the city, parked cars, walls, and target range are absent.
 - Camera: auto-recenter is off by default, so the camera keeps the angle you set. Turn it on in the dev panel to return to behind the warrior after orbiting.
 - F1: toggle the skeleton overlay (joints and bones), which also shows the current clip.
 
-The warrior model is `assets/characters/african_warrior.glb`, and the weapon props are
-`assets/models/rifle.glb` and `assets/models/pistol.glb`. They are loaded from the working
-directory on desktop and bundled into the web build.
+The warrior model is `assets/characters/african_warrior.glb`. Rifle and pistol props use
+`assets/models/rifle.glb` and `assets/models/pistol.glb`; the shotgun prop is built from
+geometry at runtime. The GLB files load from the working directory on desktop and are
+bundled into the web build.
 
 ## Build
 

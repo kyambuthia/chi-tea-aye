@@ -72,18 +72,20 @@ void drawRadar(ImDrawList* draw, const gameplay::GameState& gameplay, const worl
     const ImVec2 hi(view.screen_x + view.half_size, view.screen_y + view.half_size);
     draw->AddRectFilled(ImVec2(lo.x - 3, lo.y - 3), ImVec2(hi.x + 3, hi.y + 3), rgba(0, 0, 0, 150), 10.0f);
     draw->PushClipRect(lo, hi, true);
-    draw->AddRectFilled(lo, hi, rgba(52, 56, 52, 215));
+    draw->AddRectFilled(lo, hi, world.cityEnabled() ? rgba(52, 56, 52, 215) : rgba(64, 96, 58, 235));
 
-    using L = world::CityLayout;
     const float reach = view.reach() * 1.5f;  // the corners reach farther than the edge
-    // Blocks: lot ground, then the roads as the gaps between them. The park is green.
-    for (int bz = -L::kBlockRadius; bz <= L::kBlockRadius; ++bz) {
-        for (int bx = -L::kBlockRadius; bx <= L::kBlockRadius; ++bx) {
-            const float cx = bx * L::kBlockPitch;
-            const float cz = bz * L::kBlockPitch;
-            if (std::fabs(cx - view.world_x) > reach + L::kBlockHalf || std::fabs(cz - view.world_z) > reach + L::kBlockHalf) continue;
-            const ImU32 ground = (bx == 0 && bz == 0) ? rgba(64, 96, 58, 235) : rgba(92, 94, 90, 235);
-            quad(draw, view, cx - L::kBlockHalf, cz - L::kBlockHalf, cx + L::kBlockHalf, cz + L::kBlockHalf, ground);
+    if (world.cityEnabled()) {
+        using L = world::CityLayout;
+        // Blocks: lot ground, then the roads as the gaps between them. The park is green.
+        for (int bz = -L::kBlockRadius; bz <= L::kBlockRadius; ++bz) {
+            for (int bx = -L::kBlockRadius; bx <= L::kBlockRadius; ++bx) {
+                const float cx = bx * L::kBlockPitch;
+                const float cz = bz * L::kBlockPitch;
+                if (std::fabs(cx - view.world_x) > reach + L::kBlockHalf || std::fabs(cz - view.world_z) > reach + L::kBlockHalf) continue;
+                const ImU32 ground = (bx == 0 && bz == 0) ? rgba(64, 96, 58, 235) : rgba(92, 94, 90, 235);
+                quad(draw, view, cx - L::kBlockHalf, cz - L::kBlockHalf, cx + L::kBlockHalf, cz + L::kBlockHalf, ground);
+            }
         }
     }
     // Buildings, by footprint.

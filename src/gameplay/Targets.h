@@ -47,10 +47,12 @@ public:
     int knockDownInCircle(float x, float z, float radius);
 
     const std::array<Target, kCount>& targets() const { return targets_; }
+    bool enabled() const { return enabled_; }
     int shots() const { return shots_; }
     int hits() const { return hits_; }
 
 private:
+    bool enabled_ = false;
     std::array<Target, kCount> targets_{};
     int shots_ = 0;
     int hits_ = 0;

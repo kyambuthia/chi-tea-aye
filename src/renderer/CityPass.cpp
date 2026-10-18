@@ -531,6 +531,11 @@ void CityPass::drawOpaque(const CityFrame& frame, const gameplay::GameState& gam
     if (box_program_ == 0) {
         return;
     }
+    if (!world_->cityEnabled()) {
+        visible_instances_ = 0;
+        car_instances_ = 0;
+        return;
+    }
     // Cull: outside the frustum, or so far that the fog has swallowed it.
     frame_instances_.clear();
     const float max_d2 = frame.max_distance * frame.max_distance;

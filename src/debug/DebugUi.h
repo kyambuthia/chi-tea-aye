@@ -20,10 +20,6 @@ namespace debug {
 struct ShotFeedback {
     float shot_age = 1e9f;   // seconds since the shot; large before the first one
     bool hit = false;        // the shot hit a target
-    bool muzzle_visible = false;
-    float muzzle_x = 0.0f, muzzle_y = 0.0f;
-    bool impact_visible = false;
-    float impact_x = 0.0f, impact_y = 0.0f;
 };
 
 // Window positions of the rifle's hand, grip, fore-end and muzzle (for the F2 overlay).
@@ -45,7 +41,7 @@ public:
     void draw(const gameplay::GameState& gameplay, const app::InputState& input, renderer::StyleSettings& style,
         const renderer::Renderer::Stats& stats, uint64_t frame_count, float delta_time, const char* played_clip, float clip_time,
         float clip_duration);
-    // The muzzle flash, tracer, impact spark and hit marker of the latest shot.
+    // The hit confirmation marker for the latest shot. Shot lighting is composited by Renderer.
     void drawShotFeedback(const ShotFeedback& shot);
     // Markers for the hand (white), grip (green), fore-end (blue) and muzzle (red), with the rifle's axis.
     void drawRiflePoints(const RiflePointsOverlay& points);

@@ -84,15 +84,15 @@ public:
     // The ray from the camera through the centre of the view: where a shot goes.
     Ray cameraRay() const;
 
-    // The camera's eye and look point. Orbiting, the eye is behind the warrior. Aimed,
-    // the eye moves to the right shoulder and looks down the rifle's aim line.
+    // The camera's eye and look point. Aimed, it stays in third person over the
+    // right shoulder and looks down the rifle's aim line.
     void cameraView(float eye[3], float look[3]) const;
 
     // cameraView with the camera shake added. For drawing only: shots and aim use the
     // steady view, so shake never moves where a bullet goes.
     void renderCameraView(float eye[3], float look[3]) const;
 
-    // Vertical field of view in radians: narrower when aimed, wider at speed in a car.
+    // Vertical field of view in radians: held wide while aiming, wider at speed in a car.
     float cameraFov() const;
 
     // Camera trauma, 0..1: added by shots and crashes, decaying over time. The visible

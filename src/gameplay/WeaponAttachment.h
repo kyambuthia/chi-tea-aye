@@ -16,12 +16,12 @@ inline math::Mat4 makeWeaponModelTransform(const math::Mat4& hand_world, const m
     return math::multiply(hand_world, grip_offset);
 }
 
-// A held rifle, aimed along a direction. Its grip point (in prop space) sits at
-// grip_world, and its muzzle (the prop's -Z end) points along aim, a unit vector.
+// A prop with its muzzle on local -Z. Its chosen local point sits at
+// grip_world, and its muzzle points along aim, a unit vector.
 //
 //   model = translate(grip_world) * [X Y Z] * translate(-grip_local)
 //
-// [X Y Z] is a proper rotation: Z is -aim, X is level and across the rifle, and
+// [X Y Z] is a proper rotation: Z is -aim, X is level and across the prop, and
 // Y completes the frame. (The mesh is not mirrored.)
 inline math::Mat4 makeAimedWeaponTransform(const float grip_world[3], const float aim[3], const float grip_local[3]) {
     // Z: the mesh's +Z points back along the aim, toward the stock.

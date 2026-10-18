@@ -36,13 +36,12 @@ constexpr float kGripModel[3] = {-0.12f, 1.38f, 0.2f};
 constexpr float kGripBelowBore = 0.05f;
 // Aimed sight: no turn of the aim (kAimYaw = 0 keeps the verified sight view).
 constexpr float kAimYaw = 0.0f;
-// Orbit view: the look point sits this far to the warrior's left, so the crosshair at the
-// centre of the view falls left of the warrior. The eye stays put, so the shots follow.
-constexpr float kOrbitShift = 0.25f;
-// The eye sits behind the grip and over the grip-side shoulder.
-constexpr float kSightBack = 0.35f;
-constexpr float kSightUp = 0.1f;
-constexpr float kSightRight = 0.25f;
+// Shift the view toward the warrior's right so the centred crosshair sits to his right.
+constexpr float kOrbitShift = 0.4f;
+// Aim from a third-person shoulder view, far enough back to keep the shoulder visible.
+constexpr float kSightBack = 2.5f;
+constexpr float kSightUp = 0.3f;
+constexpr float kSightRight = 0.55f;
 constexpr float kSightRange = 20.0f;
 // Lens distance kept between the camera and a wall it is pulled in front of.
 constexpr float kCameraWallMargin = 0.3f;
@@ -633,8 +632,9 @@ void GameState::spawnVehicles(const world::World& world) {
 }
 
 float GameState::cameraFov() const {
-    const float aim = weapon_.active() == WeaponSlot::Rifle && !driving() ? weapon_.aim() : 0.0f;
-    return (60.0f - 30.0f * aim) * kPi / 180.0f + fov_boost_;
+    // Keep the same wide third-person field of view while aiming; the shoulder
+    // offset changes framing without switching to a zoomed sight view.
+    return 60.0f * kPi / 180.0f + fov_boost_;
 }
 
 void GameState::renderCameraView(float eye[3], float look[3]) const {
@@ -747,13 +747,13 @@ void GameState::cameraView(float eye[3], float look[3]) const {
     // pulled in by walls.
     const float distance = clearCameraDistance(camera_distance_);
     const float horizontal = distance * std::cos(pitch);
-    // The look point is shifted to the warrior's left (the camera's -right), so the crosshair
-    // lands left of the warrior. Aimed, the sight view takes over (see below).
+    // Shift the view target right of the warrior, placing the centred crosshair
+    // just to the right of the player.
     const float orbit_right[3] = {std::cos(az), 0.0f, -std::sin(az)};
     const float orbit_look[3] = {
-        camera_target_x_ - orbit_right[0] * kOrbitShift,
+        camera_target_x_ + orbit_right[0] * kOrbitShift,
         look_height_,
-        camera_target_z_ - orbit_right[2] * kOrbitShift,
+        camera_target_z_ + orbit_right[2] * kOrbitShift,
     };
     const float orbit_eye[3] = {
         orbit_look[0] + horizontal * std::sin(az),
@@ -761,8 +761,8 @@ void GameState::cameraView(float eye[3], float look[3]) const {
         orbit_look[2] + horizontal * std::cos(az),
     };
 
-    // Sight: the grip, and the eye a little behind it along the aim. The rifle lies on
-    // the shot line, so the barrel is in the scope.
+    // Shoulder aim: look along the rifle's shot line from behind its grip. The wider
+    // field of view keeps the warrior's shoulder visible instead of filling the view.
     const float forward[3] = {-std::sin(az) * std::cos(pitch), -std::sin(pitch), -std::cos(az) * std::cos(pitch)};
     float grip[3];
     sightGrip(grip);
@@ -776,7 +776,7 @@ void GameState::cameraView(float eye[3], float look[3]) const {
         bore[1] - forward[1] * kSightBack + kSightUp,
         bore[2] - forward[2] * kSightBack + right[2] * kSightRight,
     };
-    // Turn the aim a little to the warrior's left, keeping its pitch.
+    // Keep the sight line aligned with the view direction.
     float aim_dir[3] = {forward[0] - right[0] * kAimYaw, forward[1], forward[2] - right[2] * kAimYaw};
     const float aim_len = std::sqrt(aim_dir[0] * aim_dir[0] + aim_dir[1] * aim_dir[1] + aim_dir[2] * aim_dir[2]);
     for (float& c : aim_dir) c /= aim_len;

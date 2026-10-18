@@ -20,6 +20,7 @@ constexpr float kTargetHeight = 2.0f;
 } // namespace
 
 void Targets::place(const world::World& world) {
+    enabled_ = true;
     for (int i = 0; i < kCount; ++i) {
         Target& target = targets_[i];
         target.size = kTargetWidth;
@@ -35,6 +36,7 @@ void Targets::place(const world::World& world) {
 }
 
 void Targets::update(float delta_time) {
+    if (!enabled_) return;
     for (Target& target : targets_) {
         if (target.standing) {
             continue;
@@ -48,6 +50,10 @@ void Targets::update(float delta_time) {
 }
 
 bool Targets::shoot(const Ray& ray, float max_distance, float* impact_distance) {
+    if (!enabled_) {
+        if (impact_distance != nullptr) *impact_distance = max_distance;
+        return false;
+    }
     ++shots_;
     if (impact_distance != nullptr) {
         *impact_distance = max_distance;
@@ -82,6 +88,7 @@ bool Targets::shoot(const Ray& ray, float max_distance, float* impact_distance) 
 }
 
 int Targets::knockDownInCircle(float x, float z, float radius) {
+    if (!enabled_) return 0;
     int fallen = 0;
     for (Target& target : targets_) {
         if (!target.standing) {

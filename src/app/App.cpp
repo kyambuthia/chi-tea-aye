@@ -105,7 +105,7 @@ public:
         world_.init();
         physics_.init();
         gameplay_.init();
-        gameplay_.placeTargets(world_);
+        if (world_.cityEnabled()) gameplay_.placeTargets(world_);
         gameplay_.spawnVehicles(world_);
         renderer_.init(assets_.character(), assets_.ybot(), world_, assets_.rifle(), assets_.pistol());
         debug_ui_.init(window_, gl_context_, kGlslVersion);
@@ -628,9 +628,6 @@ private:
         const gameplay::GameState::ShotEvent& shot = gameplay_.lastShot();
         feedback.shot_age = shot.age;
         feedback.hit = shot.hit;
-        float muzzle[3];
-        feedback.muzzle_visible = renderer_.muzzlePoint(muzzle) && windowPoint(muzzle, feedback.muzzle_x, feedback.muzzle_y);
-        feedback.impact_visible = windowPoint(shot.impact, feedback.impact_x, feedback.impact_y);
         return feedback;
     }
 
@@ -841,7 +838,7 @@ private:
     bool gamepad_last_used_ = false;
     InputState input_;
     assets::AssetSystem assets_;
-    world::World world_;
+    world::World world_{false};
     physics::Physics physics_;
     gameplay::GameState gameplay_;
     renderer::Renderer renderer_;

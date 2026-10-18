@@ -44,6 +44,19 @@ int main() {
         world.practiceWallCount(), world.city().lamps().size(), world.city().parking().size());
     expect(boxes.size() > 100, "the city has buildings");
 
+    // The playable open terrain has no hidden city collisions or parked cars.
+    {
+        const world::World open(false);
+        std::vector<int> near;
+        open.boxesNear(-10.0f, -10.0f, 10.0f, 10.0f, near);
+        const float origin[3] = {0.0f, 2.0f, 0.0f};
+        const float direction[3] = {1.0f, 0.0f, 0.0f};
+        expect(open.walls().empty() && near.empty(), "open terrain has no solid boxes");
+        expect(open.city().buildings().empty() && open.city().lamps().empty() && open.city().parking().empty(),
+            "open terrain has no city objects");
+        expect(open.raycast(origin, direction, 100.0f) == 100.0f, "open terrain has no invisible ray hits");
+    }
+
     // 1. Grid queries return exactly the boxes a brute-force footprint test finds.
     {
         Lcg rng;

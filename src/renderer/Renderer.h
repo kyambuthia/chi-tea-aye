@@ -65,8 +65,6 @@ public:
     // Screen position of a world point in normalised device coordinates (-1 to 1, y up).
     // Returns false when the point is behind the camera.
     bool projectPoint(const float p[3], float& ndc_x, float& ndc_y) const;
-    // The rifle's muzzle this frame. Returns false when no rifle is held.
-    bool muzzlePoint(float out[3]) const;
     // This frame's rifle points, in world space. Returns false when no rifle is held.
     struct RiflePoints {
         float hand[3];

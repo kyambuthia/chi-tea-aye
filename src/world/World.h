@@ -22,12 +22,13 @@ public:
     static constexpr float kBaseHeight = -0.52f;
     // The park's rolling terrain spans [-kHalfSize, kHalfSize] on both ground axes.
     static constexpr float kHalfSize = 20.0f;
-    // The city ends here; the warrior and cars stop just inside.
+    // World boundary; the warrior and cars stop just inside.
     static constexpr float kCityHalfSize = CityLayout::kHalfExtent;
     static constexpr uint32_t kCitySeed = 0x6c69626cu;
 
-    // Builds the city. Cheap and deterministic, so tests can make worlds freely.
-    World();
+    // The playable scene can use open terrain while city simulations still build
+    // their deterministic layout.
+    explicit World(bool city_enabled = true);
 
     void init();
     void cleanup();
@@ -48,6 +49,7 @@ public:
     int practiceWallCount() const { return practice_walls_; }
 
     const City& city() const { return city_; }
+    bool cityEnabled() const { return city_enabled_; }
 
     // Indices into walls() of boxes whose footprint overlaps the rectangle. Appends to out.
     void boxesNear(float min_x, float min_z, float max_x, float max_z, std::vector<int>& out) const;
@@ -57,6 +59,7 @@ public:
     float raycast(const float origin[3], const float direction[3], float max_distance, int* hit_index = nullptr) const;
 
 private:
+    bool city_enabled_ = true;
     City city_;
     std::vector<Box> solids_;
     std::vector<SolidStyle> styles_;
