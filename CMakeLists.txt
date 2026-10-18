@@ -6,6 +6,23 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Jolt Physics provides the collision and rigid-body runtime used by chi-sim.
+# Keep its optional compute backends and standalone install rules out of this build.
+include(FetchContent)
+set(INTERPROCEDURAL_OPTIMIZATION OFF CACHE BOOL "" FORCE)
+set(ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+set(JPH_USE_DX12 OFF CACHE BOOL "" FORCE)
+set(JPH_USE_VK OFF CACHE BOOL "" FORCE)
+set(JPH_USE_MTL OFF CACHE BOOL "" FORCE)
+set(JPH_USE_CPU_COMPUTE OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(JoltPhysics
+    GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
+    GIT_TAG v5.6.0
+    GIT_SHALLOW TRUE
+    SOURCE_SUBDIR Build
+)
+FetchContent_MakeAvailable(JoltPhysics)
+
 # GLES 3 on web; desktop uses GL 3.3 core.
 if(EMSCRIPTEN)
     set(CHI_GLES ON)
@@ -61,7 +78,7 @@ add_library(chi-sim STATIC
     src/physics/Vehicle.cpp
 )
 target_include_directories(chi-sim PUBLIC src)
-target_link_libraries(chi-sim PUBLIC chi-world)
+target_link_libraries(chi-sim PUBLIC chi-world Jolt)
 
 set(IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/imgui")
 add_library(imgui STATIC

@@ -45,7 +45,8 @@ bundled into the web build.
 
 ## Build
 
-SDL3 and Dear ImGui are git submodules. Clone with `--recurse-submodules`, or run:
+SDL3, Dear ImGui, and ozz-animation are git submodules. Jolt Physics 5.6.0 is fetched by
+CMake during configuration. Clone with `--recurse-submodules`, or run:
 
 ```sh
 git submodule update --init --recursive
